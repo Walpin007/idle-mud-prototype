@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.4.3</title>
+<title>생존 원정 MUD 프로토타입 v0.4.1.3</title>
 <style>
 :root{
   --bg:#000;
@@ -267,7 +267,7 @@ const CONFIG = {
   // 데모 모드에서는 현실 20초 = 육성 1일
   TRAINING_DEMO_DAY_MS:20000,
 
-  SAVE_KEY:"mud_idle_proto_v7"
+  SAVE_KEY:"mud_idle_proto_v8"
 };
 
 const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -299,7 +299,7 @@ function defaultState(){
     expeditionCount:0,
     totalHiddenFound:0,
     lastSeenAt:Date.now(),
-    screen:"village", // village | training
+    screen:"village", // village | training | dungeon
     logs:[
       {text:"> 파티가 마을에서 휴식 중입니다.",cls:"log-muted"},
       {text:"> 원정을 시작할 수 있습니다.",cls:""}
@@ -896,7 +896,7 @@ function resetFinishedNovice(){
 
 function startExpedition(){
   if(state.mode==="expedition")return;
-  state.screen="village";
+  state.screen="dungeon";
 
   state.mode="expedition";
   state.expedition=createDungeon();
@@ -1082,18 +1082,19 @@ function renderAll(){
 }
 
 function renderLocation(){
-  if(state.screen==="training" && state.mode!=="expedition"){
+  if(state.screen==="training"){
     locationEl.textContent="육성소 · 노비스 육성";
-  }else if(state.mode==="expedition" && state.expedition){
+  }else if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     const floor=state.expedition.floors[state.expedition.currentFloorIndex];
     locationEl.textContent=`폐허 던전 · ${floor.floor}F`;
   }else{
-    locationEl.textContent="마을 광장 · 휴식 중";
+    locationEl.textContent=state.mode==="expedition"
+      ? "마을 광장 · 원정대 파견 중"
+      : "마을 광장 · 휴식 중";
   }
 }
-
 function renderStage(){
-  if(state.screen==="training" && state.mode!=="expedition"){
+  if(state.screen==="training"){
     syncTrainingDays();
     const n=state.training.novice;
     stageContent.className="";
@@ -1114,7 +1115,7 @@ function renderStage(){
         </div>
       `;
     }
-  }else if(state.mode==="expedition" && state.expedition){
+  }else if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     stageContent.className="";
     stageContent.innerHTML=`
       <div id="floorBadge" class="floor-badge"></div>
@@ -1137,7 +1138,7 @@ function renderStage(){
 /____  SAFE VILLAGE  _______\\
      \\_______________/
 
-        PARTY RESTING`;
+        ${state.mode==="expedition" ? "PARTY ON EXPEDITION" : "PARTY RESTING"}`;
   }
 }
 function renderMap(){
@@ -1234,7 +1235,7 @@ function renderMap(){
 }
 
 function renderStatus(){
-  if(state.screen==="training" && state.mode!=="expedition"){
+  if(state.screen==="training"){
     syncTrainingDays();
     const n=state.training.novice;
     if(!n){
@@ -1263,7 +1264,7 @@ function renderStatus(){
   const expNeeded=expToNext(state.level);
   let extra="";
 
-  if(state.mode==="expedition" && state.expedition){
+  if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     const exp=state.expedition;
     extra=`
       <div class="status-item"><span>원정</span><span>${Math.floor(clamp(exp.progressMinutes/exp.baseDurationMinutes,0,1)*100)}%</span></div>
@@ -1288,7 +1289,7 @@ function renderStatus(){
 }
 function renderLog(){
   logEl.innerHTML="";
-  const source=(state.screen==="training" && state.mode!=="expedition")
+  const source=(state.screen==="training")
     ? state.training.logs
     : state.logs;
 
@@ -1301,28 +1302,74 @@ function renderLog(){
   logEl.scrollTop=logEl.scrollHeight;
 }
 
+
+function showVillage(){
+  state.screen="village";
+  renderAll();
+  saveState();
+}
+
+function showDungeon(){
+  if(state.mode!=="expedition" || !state.expedition){
+    showToast("진행 중인 원정이 없습니다.");
+    return;
+  }
+  state.screen="dungeon";
+  renderAll();
+  saveState();
+}
+
+function globalHiddenBranchButton(){
+  const exp=state.expedition;
+  if(!exp?.pendingBranch)return "";
+  const remain=Math.max(0,Math.ceil((exp.pendingBranch.expiresAt-Date.now())/1000));
+  return `<button id="globalBranchBtn" class="alert full">[!] 원정대가 숨겨진 길 발견 · ${remain}</button>`;
+}
+
+function bindGlobalHiddenBranchButton(){
+  const btn=$("#globalBranchBtn");
+  if(!btn)return;
+  btn.onclick=()=>{
+    state.screen="dungeon";
+    renderAll();
+    setTimeout(()=>{
+      if(state.expedition?.pendingBranch) takeBranch();
+    },0);
+  };
+}
+
 function renderControls(){
-  if(state.screen==="training" && state.mode!=="expedition"){
+  // 육성 화면: 원정은 백그라운드에서 계속 진행된다.
+  if(state.screen==="training"){
     syncTrainingDays();
     const n=state.training.novice;
+    const alertBtn=globalHiddenBranchButton();
 
     if(!n){
       controlsEl.innerHTML=`
         <button id="newNoviceBtn" class="wide">노비스 받기</button>
-        <button id="backVillageBtn" class="wide">마을로</button>
+        <button id="backVillageBtn" class="wide">마을 보기</button>
+        ${state.mode==="expedition" ? `<button id="viewExpBtn" class="full">원정 보기</button>` : ""}
+        ${alertBtn}
       `;
       $("#newNoviceBtn").onclick=beginTraining;
-      $("#backVillageBtn").onclick=leaveTraining;
+      $("#backVillageBtn").onclick=showVillage;
+      if($("#viewExpBtn")) $("#viewExpBtn").onclick=showDungeon;
+      bindGlobalHiddenBranchButton();
       return;
     }
 
     if(n.completed){
       controlsEl.innerHTML=`
         <button id="nextNoviceBtn" class="wide">다음 노비스</button>
-        <button id="backVillageBtn" class="wide">마을로</button>
+        <button id="backVillageBtn" class="wide">마을 보기</button>
+        ${state.mode==="expedition" ? `<button id="viewExpBtn" class="full">원정 보기</button>` : ""}
+        ${alertBtn}
       `;
       $("#nextNoviceBtn").onclick=resetFinishedNovice;
-      $("#backVillageBtn").onclick=leaveTraining;
+      $("#backVillageBtn").onclick=showVillage;
+      if($("#viewExpBtn")) $("#viewExpBtn").onclick=showDungeon;
+      bindGlobalHiddenBranchButton();
       return;
     }
 
@@ -1331,69 +1378,79 @@ function renderControls(){
       <button class="training-btn" id="trainDEX">민첩<small>DEX</small></button>
       <button class="training-btn" id="trainINT">지력<small>INT</small></button>
       <button class="training-btn" id="trainFAI">신앙<small>FAI</small></button>
-      <button id="backVillageBtn" class="full">마을로</button>
+      <button id="backVillageBtn" ${state.mode==="expedition" ? "" : 'class="full"'}>마을 보기</button>
+      ${state.mode==="expedition" ? `<button id="viewExpBtn">원정 보기</button>` : ""}
+      ${alertBtn}
     `;
     $("#trainSTR").onclick=()=>trainStat("STR");
     $("#trainDEX").onclick=()=>trainStat("DEX");
     $("#trainINT").onclick=()=>trainStat("INT");
     $("#trainFAI").onclick=()=>trainStat("FAI");
-    $("#backVillageBtn").onclick=leaveTraining;
+    $("#backVillageBtn").onclick=showVillage;
+    if($("#viewExpBtn")) $("#viewExpBtn").onclick=showDungeon;
+    bindGlobalHiddenBranchButton();
     return;
   }
 
-  if(state.mode==="expedition" && state.expedition){
+  // 던전 화면
+  if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     const exp=state.expedition;
 
     if(exp.pendingBranch){
       const remain=Math.max(0,Math.ceil((exp.pendingBranch.expiresAt-Date.now())/1000));
       controlsEl.innerHTML=`
         <button id="branchActionBtn" class="alert full">숨겨진 길 탐색 · ${remain}</button>
+        <button id="villageBtn" class="wide">마을 보기</button>
+        <button id="trainingBtn" class="wide">육성</button>
       `;
       $("#branchActionBtn").onclick=takeBranch;
+      $("#villageBtn").onclick=showVillage;
+      $("#trainingBtn").onclick=enterTraining;
       return;
     }
 
     controlsEl.innerHTML=`
-      <button disabled class="wide">원정 진행 중</button>
-      <button id="statusBtn" class="wide">원정 상태</button>
-    `;
-    $("#statusBtn").onclick=()=>{
-      showToast(`진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}% · 생명소모 ${formatMinutes(exp.lifeCostMinutes)}`);
-    };
-  }else{
-    // 요청사항: 육성과 원정 시작의 위치를 교체.
-    controlsEl.innerHTML=`
+      <button id="villageBtn">마을 보기</button>
       <button id="trainingBtn">육성</button>
-      <button id="expeditionBtn">원정 시작</button>
       <button id="partyBtn">파티</button>
       <button id="infoBtn">정보</button>
     `;
+    $("#villageBtn").onclick=showVillage;
     $("#trainingBtn").onclick=enterTraining;
-    $("#expeditionBtn").onclick=startExpedition;
     $("#partyBtn").onclick=()=>showToast(`파티 후보 ${state.training.graduates.length}명 · 파티 편성은 다음 단계`);
-    $("#infoBtn").onclick=()=>{
-      alert(
-`프로토타입 v0.4
-
-[원정]
-• 온라인 기준 던전 약 60분
-• 총 5층 / 미로형 자동 탐험
-• 숨겨진 통로 5초 개입
-• 완료 후 자동 휴식
-
-[육성]
-• 노비스 1명 집중 육성
-• 기본 ${CONFIG.TRAINING_DAYS}일
-• 하루 행동 ${CONFIG.TRAINING_ACTIONS_PER_DAY}회
-• 미사용 행동 최대 ${CONFIG.TRAINING_CARRY_MAX}회 이월
-• STR / DEX / INT / FAI 훈련
-• 최고 능력치 기준 자동 전직
-• 전직 후 파티 후보 등록
-
-데모 모드에서는 육성 1일이 현실 20초입니다.`
-      );
-    };
+    $("#infoBtn").onclick=()=>showToast(`원정 진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}%`);
+    return;
   }
+
+  // 마을 화면. 원정 중이라면 원정 보기로 전환한다.
+  const alertBtn=globalHiddenBranchButton();
+  controlsEl.innerHTML=`
+    <button id="trainingBtn">육성</button>
+    <button id="expeditionBtn">${state.mode==="expedition" ? "원정 보기" : "원정 시작"}</button>
+    <button id="partyBtn">파티</button>
+    <button id="infoBtn">정보</button>
+    ${alertBtn}
+  `;
+  $("#trainingBtn").onclick=enterTraining;
+  $("#expeditionBtn").onclick=state.mode==="expedition" ? showDungeon : startExpedition;
+  $("#partyBtn").onclick=()=>showToast(`파티 후보 ${state.training.graduates.length}명 · 파티 편성은 다음 단계`);
+  $("#infoBtn").onclick=()=>{
+    const expeditionText=state.mode==="expedition"
+      ? `원정대 파견 중 · 백그라운드 진행`
+      : `원정대 마을 대기 중`;
+    alert(
+`프로토타입 v0.4.1
+
+${expeditionText}
+
+• 원정 중에도 마을과 육성소 이용 가능
+• 마을에서 [원정 보기]로 던전 복귀
+• 던전에서 [마을 보기]로 마을 복귀
+• 화면을 바꿔도 원정 시간은 계속 진행
+• 숨겨진 길 발견 시 마을/육성 화면에도 빨간 알림 표시`
+    );
+  };
+  bindGlobalHiddenBranchButton();
 }
 /* ---------- 저장 ---------- */
 
