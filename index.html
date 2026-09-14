@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.3.6.3</title>
+<title>생존 원정 MUD 프로토타입 v0.4.3</title>
 <style>
 :root{
   --bg:#000;
@@ -160,6 +160,56 @@ button.alert:active{background:var(--red);color:#000}
 .wide{grid-column:span 2}
 .full{grid-column:1/-1}
 @keyframes pulse{50%{filter:brightness(1.7)}}
+
+.training-wrap{
+  width:min(100%,340px);
+  min-height:220px;
+  margin:auto;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+}
+.novice-sprite{
+  white-space:pre;
+  text-align:center;
+  font-size:13px;
+  line-height:1.05;
+  color:#fff;
+}
+.novice-name{
+  font-size:18px;
+  font-weight:900;
+  letter-spacing:1px;
+}
+.training-sub{
+  font-size:12px;
+  color:#aaa;
+  text-align:center;
+}
+.training-stat-grid{
+  width:100%;
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px 12px;
+}
+.training-stat{
+  border-bottom:1px dotted #555;
+  display:flex;
+  justify-content:space-between;
+  padding-bottom:4px;
+}
+.training-btn{
+  min-height:50px;
+}
+.training-btn small{
+  display:block;
+  font-size:10px;
+  color:#aaa;
+  margin-top:2px;
+}
+
 #toast{
   position:fixed; left:50%;
   bottom:calc(18px + var(--safe-bottom));
@@ -210,7 +260,14 @@ const CONFIG = {
   START_LIFE_MINUTES:5*24*60,
   MAX_ACTION:6,
 
-  SAVE_KEY:"mud_idle_proto_v6"
+  // 육성 프로토타입
+  TRAINING_DAYS:3,
+  TRAINING_ACTIONS_PER_DAY:4,
+  TRAINING_CARRY_MAX:2,
+  // 데모 모드에서는 현실 20초 = 육성 1일
+  TRAINING_DEMO_DAY_MS:20000,
+
+  SAVE_KEY:"mud_idle_proto_v7"
 };
 
 const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -230,7 +287,7 @@ let runtime={
 
 function defaultState(){
   return {
-    version:3,
+    version:4,
     mode:"rest",
     lifeMinutes:CONFIG.START_LIFE_MINUTES,
     action:CONFIG.MAX_ACTION,
@@ -242,11 +299,21 @@ function defaultState(){
     expeditionCount:0,
     totalHiddenFound:0,
     lastSeenAt:Date.now(),
+    screen:"village", // village | training
     logs:[
       {text:"> 파티가 마을에서 휴식 중입니다.",cls:"log-muted"},
       {text:"> 원정을 시작할 수 있습니다.",cls:""}
     ],
-    expedition:null
+    expedition:null,
+
+    training:{
+      novice:null,
+      graduates:[],
+      logs:[
+        {text:"> 육성소가 비어 있습니다.",cls:"log-muted"},
+        {text:"> 새 노비스를 받아 육성을 시작할 수 있습니다.",cls:""}
+      ]
+    }
   };
 }
 
@@ -664,10 +731,172 @@ function missBranch(){
   saveState();
 }
 
+
+/* ---------- 육성 ---------- */
+
+function trainingNow(){
+  return Date.now();
+}
+
+function trainingDayLengthMs(){
+  return CONFIG.DEMO_MODE ? CONFIG.TRAINING_DEMO_DAY_MS : 24*60*60*1000;
+}
+
+function makeNovice(){
+  const names=["루카","미아","노아","에린","카이","레아","테오","유나","엘리","로안"];
+  const name=names[randInt(0,names.length-1)];
+  return {
+    id:`novice_${Date.now()}`,
+    name,
+    startedAt:trainingNow(),
+    lastDayIndex:0,
+    day:1,
+    baseActions:CONFIG.TRAINING_ACTIONS_PER_DAY,
+    actionsLeft:CONFIG.TRAINING_ACTIONS_PER_DAY,
+    carry:0,
+    stats:{
+      STR:randInt(1,3),
+      DEX:randInt(1,3),
+      INT:randInt(1,3),
+      FAI:randInt(1,3)
+    },
+    tendency:{
+      brave:0,
+      calm:0
+    },
+    completed:false,
+    className:null
+  };
+}
+
+function trainingAddLog(text,cls=""){
+  state.training.logs.push({text,cls});
+  if(state.training.logs.length>60){
+    state.training.logs.splice(0,state.training.logs.length-60);
+  }
+}
+
+function syncTrainingDays(){
+  const n=state.training?.novice;
+  if(!n || n.completed)return;
+
+  const dayLen=trainingDayLengthMs();
+  const elapsed=Math.max(0,trainingNow()-n.startedAt);
+  const dayIndex=Math.floor(elapsed/dayLen);
+  if(dayIndex<=n.lastDayIndex)return;
+
+  for(let d=n.lastDayIndex+1; d<=dayIndex; d++){
+    const unused=Math.max(0,n.actionsLeft);
+    const carry=Math.min(CONFIG.TRAINING_CARRY_MAX,unused);
+    n.carry=carry;
+    n.actionsLeft=CONFIG.TRAINING_ACTIONS_PER_DAY+carry;
+    n.day=Math.min(CONFIG.TRAINING_DAYS,d+1);
+    trainingAddLog(`> 육성 ${n.day}일차가 시작되었습니다.`, "log-good");
+    if(carry>0){
+      trainingAddLog(`> 미사용 행동 ${carry}회가 이월되었습니다.`, "log-muted");
+    }
+  }
+  n.lastDayIndex=dayIndex;
+
+  if(dayIndex>=CONFIG.TRAINING_DAYS){
+    finishTraining();
+  }
+}
+
+function chooseClass(n){
+  const s=n.stats;
+  const max=Math.max(s.STR,s.DEX,s.INT,s.FAI);
+  const candidates=[];
+  if(s.STR===max)candidates.push("나이트");
+  if(s.DEX===max)candidates.push("레인저");
+  if(s.INT===max)candidates.push("소서러");
+  if(s.FAI===max)candidates.push("프리스트");
+  return candidates[randInt(0,candidates.length-1)];
+}
+
+function finishTraining(){
+  const n=state.training?.novice;
+  if(!n || n.completed)return;
+
+  n.completed=true;
+  n.className=chooseClass(n);
+
+  const graduate={
+    id:n.id,
+    name:n.name,
+    className:n.className,
+    level:1,
+    exp:0,
+    lifeMinutes:CONFIG.START_LIFE_MINUTES,
+    stats:{...n.stats}
+  };
+  state.training.graduates.push(graduate);
+
+  trainingAddLog(`> ${n.name}의 육성이 완료되었습니다.`, "log-good");
+  trainingAddLog(`> 전직 결과: ${n.className}`, "log-good");
+  trainingAddLog("> 파티 후보 명단에 등록되었습니다.", "log-muted");
+}
+
+function beginTraining(){
+  if(state.training.novice && !state.training.novice.completed)return;
+  state.training.novice=makeNovice();
+  state.training.logs=[];
+  trainingAddLog(`> 노비스 ${state.training.novice.name}의 육성을 시작합니다.`);
+  trainingAddLog(`> ${CONFIG.TRAINING_DAYS}일 동안 능력치를 성장시킵니다.`, "log-muted");
+  trainingAddLog(`> 하루 행동 ${CONFIG.TRAINING_ACTIONS_PER_DAY}회 / 최대 ${CONFIG.TRAINING_CARRY_MAX}회 이월`, "log-muted");
+  renderAll();
+  saveState();
+}
+
+function trainStat(stat){
+  syncTrainingDays();
+  const n=state.training?.novice;
+  if(!n || n.completed)return;
+  if(n.actionsLeft<=0){
+    showToast("오늘 사용할 수 있는 육성 행동이 없습니다.");
+    return;
+  }
+
+  const gain=randInt(1,2);
+  n.stats[stat]+=gain;
+  n.actionsLeft--;
+
+  const labels={STR:"근력",DEX:"민첩",INT:"지력",FAI:"신앙"};
+  trainingAddLog(`> ${labels[stat]} 훈련 완료\n  ${stat} +${gain}`);
+  renderAll();
+  saveState();
+}
+
+function enterTraining(){
+  state.screen="training";
+  syncTrainingDays();
+  renderAll();
+  saveState();
+}
+
+function leaveTraining(){
+  state.screen="village";
+  renderAll();
+  saveState();
+}
+
+function resetFinishedNovice(){
+  if(!state.training.novice?.completed)return;
+  state.training.novice=null;
+  state.training.logs=[
+    {text:"> 육성소가 비어 있습니다.",cls:"log-muted"},
+    {text:"> 새로운 노비스를 육성할 수 있습니다.",cls:""}
+  ];
+  renderAll();
+  saveState();
+}
+
+
 /* ---------- 원정 / 시간 ---------- */
 
 function startExpedition(){
   if(state.mode==="expedition")return;
+  state.screen="village";
 
   state.mode="expedition";
   state.expedition=createDungeon();
@@ -739,6 +968,7 @@ function completeExpedition(source="online",restMinutesAfter=0){
 }
 
 function onlineTick(){
+  syncTrainingDays();
   const now=Date.now();
   const realDelta=now-runtime.lastFrameAt;
   runtime.lastFrameAt=now;
@@ -775,6 +1005,7 @@ function onlineTick(){
 }
 
 function reconcileOffline(){
+  syncTrainingDays();
   const now=Date.now();
   const awayMs=Math.max(0,now-(state.lastSeenAt||now));
 
@@ -851,7 +1082,9 @@ function renderAll(){
 }
 
 function renderLocation(){
-  if(state.mode==="expedition" && state.expedition){
+  if(state.screen==="training" && state.mode!=="expedition"){
+    locationEl.textContent="육성소 · 노비스 육성";
+  }else if(state.mode==="expedition" && state.expedition){
     const floor=state.expedition.floors[state.expedition.currentFloorIndex];
     locationEl.textContent=`폐허 던전 · ${floor.floor}F`;
   }else{
@@ -860,7 +1093,28 @@ function renderLocation(){
 }
 
 function renderStage(){
-  if(state.mode==="expedition" && state.expedition){
+  if(state.screen==="training" && state.mode!=="expedition"){
+    syncTrainingDays();
+    const n=state.training.novice;
+    stageContent.className="";
+    if(!n){
+      stageContent.innerHTML=`
+        <div class="training-wrap">
+          <div class="novice-sprite">   ?\n  /|\\\\\n  / \\\\</div>
+          <div class="novice-name">EMPTY</div>
+          <div class="training-sub">새 노비스를 받아 육성을 시작하세요.</div>
+        </div>
+      `;
+    }else{
+      stageContent.innerHTML=`
+        <div class="training-wrap">
+          <div class="novice-sprite">   O\n  /|\\\\\n  / \\\\</div>
+          <div class="novice-name">${n.name}</div>
+          <div class="training-sub">${n.completed ? `${n.className} 전직 완료` : `${n.day}/${CONFIG.TRAINING_DAYS}일차 · 남은 행동 ${n.actionsLeft}회`}</div>
+        </div>
+      `;
+    }
+  }else if(state.mode==="expedition" && state.expedition){
     stageContent.className="";
     stageContent.innerHTML=`
       <div id="floorBadge" class="floor-badge"></div>
@@ -868,8 +1122,6 @@ function renderStage(){
     `;
     renderMap();
   }else{
-    // stageContent 자체는 위치 기준 컨테이너로 유지하고,
-    // 마을 그림을 별도 자식 요소로 넣어 박스 정중앙에 고정한다.
     stageContent.className="";
     stageContent.innerHTML=`<div id="villageArt" class="village-art"></div>`;
     $("#villageArt").textContent=
@@ -888,7 +1140,6 @@ function renderStage(){
         PARTY RESTING`;
   }
 }
-
 function renderMap(){
   const map=$("#map");
   const exp=state.expedition;
@@ -983,6 +1234,32 @@ function renderMap(){
 }
 
 function renderStatus(){
+  if(state.screen==="training" && state.mode!=="expedition"){
+    syncTrainingDays();
+    const n=state.training.novice;
+    if(!n){
+      statusEl.innerHTML=`
+        <div class="status-item"><span>육성기간</span><span>${CONFIG.TRAINING_DAYS}일</span></div>
+        <div class="status-item"><span>일일 행동</span><span>${CONFIG.TRAINING_ACTIONS_PER_DAY}회</span></div>
+        <div class="status-item"><span>이월</span><span>최대 ${CONFIG.TRAINING_CARRY_MAX}회</span></div>
+        <div class="status-item"><span>후보 등록</span><span>${state.training.graduates.length}명</span></div>
+      `;
+      return;
+    }
+
+    statusEl.innerHTML=`
+      <div class="status-item"><span>STR</span><span>${n.stats.STR}</span></div>
+      <div class="status-item"><span>DEX</span><span>${n.stats.DEX}</span></div>
+      <div class="status-item"><span>INT</span><span>${n.stats.INT}</span></div>
+      <div class="status-item"><span>FAI</span><span>${n.stats.FAI}</span></div>
+      <div class="status-item"><span>육성일</span><span>${n.completed ? "완료" : `${n.day}/${CONFIG.TRAINING_DAYS}`}</span></div>
+      <div class="status-item"><span>행동</span><span>${n.completed ? "-" : `${n.actionsLeft}회`}</span></div>
+      <div class="status-item"><span>전직</span><span>${n.className || "미정"}</span></div>
+      <div class="status-item"><span>후보</span><span>${state.training.graduates.length}명</span></div>
+    `;
+    return;
+  }
+
   const expNeeded=expToNext(state.level);
   let extra="";
 
@@ -1009,10 +1286,13 @@ function renderStatus(){
     ${extra}
   `;
 }
-
 function renderLog(){
   logEl.innerHTML="";
-  for(const item of state.logs){
+  const source=(state.screen==="training" && state.mode!=="expedition")
+    ? state.training.logs
+    : state.logs;
+
+  for(const item of source){
     const line=document.createElement("div");
     line.className=`log-line ${item.cls||""}`;
     line.textContent=item.text;
@@ -1022,6 +1302,45 @@ function renderLog(){
 }
 
 function renderControls(){
+  if(state.screen==="training" && state.mode!=="expedition"){
+    syncTrainingDays();
+    const n=state.training.novice;
+
+    if(!n){
+      controlsEl.innerHTML=`
+        <button id="newNoviceBtn" class="wide">노비스 받기</button>
+        <button id="backVillageBtn" class="wide">마을로</button>
+      `;
+      $("#newNoviceBtn").onclick=beginTraining;
+      $("#backVillageBtn").onclick=leaveTraining;
+      return;
+    }
+
+    if(n.completed){
+      controlsEl.innerHTML=`
+        <button id="nextNoviceBtn" class="wide">다음 노비스</button>
+        <button id="backVillageBtn" class="wide">마을로</button>
+      `;
+      $("#nextNoviceBtn").onclick=resetFinishedNovice;
+      $("#backVillageBtn").onclick=leaveTraining;
+      return;
+    }
+
+    controlsEl.innerHTML=`
+      <button class="training-btn" id="trainSTR">근력<small>STR</small></button>
+      <button class="training-btn" id="trainDEX">민첩<small>DEX</small></button>
+      <button class="training-btn" id="trainINT">지력<small>INT</small></button>
+      <button class="training-btn" id="trainFAI">신앙<small>FAI</small></button>
+      <button id="backVillageBtn" class="full">마을로</button>
+    `;
+    $("#trainSTR").onclick=()=>trainStat("STR");
+    $("#trainDEX").onclick=()=>trainStat("DEX");
+    $("#trainINT").onclick=()=>trainStat("INT");
+    $("#trainFAI").onclick=()=>trainStat("FAI");
+    $("#backVillageBtn").onclick=leaveTraining;
+    return;
+  }
+
   if(state.mode==="expedition" && state.expedition){
     const exp=state.expedition;
 
@@ -1042,33 +1361,40 @@ function renderControls(){
       showToast(`진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}% · 생명소모 ${formatMinutes(exp.lifeCostMinutes)}`);
     };
   }else{
+    // 요청사항: 육성과 원정 시작의 위치를 교체.
     controlsEl.innerHTML=`
-      <button id="expeditionBtn" class="wide">원정 시작</button>
+      <button id="trainingBtn">육성</button>
+      <button id="expeditionBtn">원정 시작</button>
       <button id="partyBtn">파티</button>
       <button id="infoBtn">정보</button>
     `;
+    $("#trainingBtn").onclick=enterTraining;
     $("#expeditionBtn").onclick=startExpedition;
-    $("#partyBtn").onclick=()=>showToast(`파티 Lv.${state.level} · 전투 계산은 추후 도입`);
+    $("#partyBtn").onclick=()=>showToast(`파티 후보 ${state.training.graduates.length}명 · 파티 편성은 다음 단계`);
     $("#infoBtn").onclick=()=>{
       alert(
-`프로토타입 v0.3.6
+`프로토타입 v0.4
 
+[원정]
 • 온라인 기준 던전 약 60분
-• 총 5층
-• 층당 10~15개 방
-• 현재 층 미니맵만 표시
-• 미로형 자동 탐험
-• 막다른 길에서는 왔던 길로 자동 복귀
-• 숨겨진 통로: 층당 1개, 가끔 2개
-• 발견 시 로그 + 하단 빨간 버튼 5초
-• 원정 완료 후 자동 휴식
-• 휴식 중 생명시간 감소속도 70%
-• 수동 저장 없음 / 자동 저장`
+• 총 5층 / 미로형 자동 탐험
+• 숨겨진 통로 5초 개입
+• 완료 후 자동 휴식
+
+[육성]
+• 노비스 1명 집중 육성
+• 기본 ${CONFIG.TRAINING_DAYS}일
+• 하루 행동 ${CONFIG.TRAINING_ACTIONS_PER_DAY}회
+• 미사용 행동 최대 ${CONFIG.TRAINING_CARRY_MAX}회 이월
+• STR / DEX / INT / FAI 훈련
+• 최고 능력치 기준 자동 전직
+• 전직 후 파티 후보 등록
+
+데모 모드에서는 육성 1일이 현실 20초입니다.`
       );
     };
   }
 }
-
 /* ---------- 저장 ---------- */
 
 function saveState(){
@@ -1080,7 +1406,7 @@ function loadState(){
     const raw=localStorage.getItem(CONFIG.SAVE_KEY);
     if(!raw)return defaultState();
     const parsed=JSON.parse(raw);
-    return parsed?.version===3?parsed:defaultState();
+    return parsed?.version===4?parsed:defaultState();
   }catch(e){
     return defaultState();
   }
