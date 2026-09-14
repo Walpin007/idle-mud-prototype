@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.3.1</title>
+<title>생존 원정 MUD 프로토타입 v0.3.2</title>
 <style>
 :root{
   --bg:#000;
@@ -885,8 +885,8 @@ function renderMap(){
 
   const boardW=340, boardH=220;
 
-  // 실제 생성된 방들의 범위를 기준으로 지도 자체를 화면 정중앙에 배치한다.
-  // 빈 격자 영역 때문에 지도가 위/아래 또는 좌/우로 치우쳐 보이지 않게 함.
+  // 층 표시는 상단에 독립적으로 띄우고,
+  // 미로 도형 자체의 중심은 항상 박스 전체의 정확한 정중앙에 맞춘다.
   const xs=floor.nodes.map(n=>n.x);
   const ys=floor.nodes.map(n=>n.y);
   const minX=Math.min(...xs), maxX=Math.max(...xs);
@@ -897,12 +897,14 @@ function renderMap(){
 
   const targetW=250;
   const targetH=135;
-  const startX=(boardW-targetW)/2;
-  const startY=(boardH-targetH)/2 + 8;
+
+  // 실제 미로 bounding box의 중앙을 board 정중앙(170,110)에 맞춤
+  const centerX=boardW/2;
+  const centerY=boardH/2;
 
   const coords=floor.nodes.map(n=>({
-    x:startX+((n.x-minX)/rangeX)*targetW,
-    y:startY+((n.y-minY)/rangeY)*targetH
+    x:centerX + (((n.x-minX)/rangeX)-0.5)*targetW,
+    y:centerY + (((n.y-minY)/rangeY)-0.5)*targetH
   }));
 
   // 모든 미로 벽/길을 미리 보여주지 않고, 지나온 길만 밝힌다.
