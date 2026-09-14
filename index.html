@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.3.3.3</title>
+<title>생존 원정 MUD 프로토타입 v0.3.4.3</title>
 <style>
 :root{
   --bg:#000;
@@ -48,22 +48,23 @@ body{
   padding:12px;
 }
 #stageContent{
+  position:relative;
   width:100%;
   height:100%;
   min-height:205px;
-  display:flex;
-  align-items:center;
-  justify-content:center;
 }
 .village-art{
   width:100%; text-align:center; white-space:pre;
   font-size:clamp(9px,2.6vw,13px); line-height:1.05;
 }
 .maze-board{
-  position:relative;
+  position:absolute;
+  left:50%;
+  top:50%;
   width:min(100%,340px);
   height:220px;
-  margin:auto;
+  margin:0;
+  transform:translate(-50%,-50%);
 }
 .maze-node{
   position:absolute;
@@ -96,8 +97,14 @@ body{
 }
 .floor-badge{
   position:absolute;
-  left:50%; top:6px; transform:translateX(-50%);
-  color:#aaa; font-size:12px; letter-spacing:1px;
+  left:50%;
+  top:10px;
+  transform:translateX(-50%);
+  color:#aaa;
+  font-size:12px;
+  letter-spacing:1px;
+  z-index:10;
+  pointer-events:none;
 }
 #status{
   padding:10px 12px;
@@ -196,7 +203,7 @@ const CONFIG = {
   START_LIFE_MINUTES:5*24*60,
   MAX_ACTION:6,
 
-  SAVE_KEY:"mud_idle_proto_v4"
+  SAVE_KEY:"mud_idle_proto_v5"
 };
 
 const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -848,7 +855,10 @@ function renderLocation(){
 function renderStage(){
   if(state.mode==="expedition" && state.expedition){
     stageContent.className="";
-    stageContent.innerHTML=`<div id="map" class="maze-board"></div>`;
+    stageContent.innerHTML=`
+      <div id="floorBadge" class="floor-badge"></div>
+      <div id="map" class="maze-board"></div>
+    `;
     renderMap();
   }else{
     stageContent.className="village-art";
@@ -878,10 +888,8 @@ function renderMap(){
   const floor=exp.floors[exp.currentFloorIndex];
   if(!floor)return;
 
-  const badge=document.createElement("div");
-  badge.className="floor-badge";
-  badge.textContent=`${floor.floor}F / ${CONFIG.FLOORS}F`;
-  map.appendChild(badge);
+  const badge=$("#floorBadge");
+  if(badge) badge.textContent=`${floor.floor}F / ${CONFIG.FLOORS}F`;
 
   const boardW=340, boardH=220;
 
@@ -958,7 +966,7 @@ function renderMap(){
     const mark=document.createElement("div");
     mark.className="maze-node hidden-mark";
     mark.style.left=`${clamp(base.x+24,20,320)}px`;
-    mark.style.top=`${clamp(base.y-24,24,196)}px`;
+    mark.style.top=`${clamp(base.y-24,34,196)}px`;
     mark.textContent=branch.taken?"◆":"?";
     map.appendChild(mark);
   }
@@ -1033,7 +1041,7 @@ function renderControls(){
     $("#partyBtn").onclick=()=>showToast(`파티 Lv.${state.level} · 전투 계산은 추후 도입`);
     $("#infoBtn").onclick=()=>{
       alert(
-`프로토타입 v0.3.3
+`프로토타입 v0.3.4
 
 • 온라인 기준 던전 약 60분
 • 총 5층
