@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.3.5.3</title>
+<title>생존 원정 MUD 프로토타입 v0.3.6.3</title>
 <style>
 :root{
   --bg:#000;
@@ -868,8 +868,11 @@ function renderStage(){
     `;
     renderMap();
   }else{
-    stageContent.className="village-art";
-    stageContent.textContent=
+    // stageContent 자체는 위치 기준 컨테이너로 유지하고,
+    // 마을 그림을 별도 자식 요소로 넣어 박스 정중앙에 고정한다.
+    stageContent.className="";
+    stageContent.innerHTML=`<div id="villageArt" class="village-art"></div>`;
+    $("#villageArt").textContent=
 `                 .       *
         *               .
              /\\
@@ -1048,7 +1051,7 @@ function renderControls(){
     $("#partyBtn").onclick=()=>showToast(`파티 Lv.${state.level} · 전투 계산은 추후 도입`);
     $("#infoBtn").onclick=()=>{
       alert(
-`프로토타입 v0.3.5
+`프로토타입 v0.3.6
 
 • 온라인 기준 던전 약 60분
 • 총 5층
