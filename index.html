@@ -1,960 +1,858 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#000000" />
-  <title>생존 원정 MUD 프로토타입 v0.2</title>
-  <style>
-    :root{
-      --bg:#000;
-      --fg:#fff;
-      --muted:#aaa;
-      --line:#fff;
-      --panel:#050505;
-      --gap:10px;
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-    }
-
-    *{box-sizing:border-box}
-    html,body{
-      margin:0;
-      background:#000;
-      color:#fff;
-      font-family:"Courier New", "Apple SD Gothic Neo", monospace;
-      min-height:100%;
-      -webkit-user-select:none;
-      user-select:none;
-    }
-
-    body{
-      display:flex;
-      justify-content:center;
-      padding:12px 10px calc(12px + var(--safe-bottom));
-    }
-
-    #game{
-      width:min(100%, 460px);
-      min-height:calc(100dvh - 24px - var(--safe-bottom));
-      display:grid;
-      grid-template-rows:auto minmax(220px,1fr) auto 190px auto;
-      gap:var(--gap);
-    }
-
-    .box{
-      border:3px solid var(--line);
-      background:var(--panel);
-      box-shadow:0 0 0 1px #000 inset;
-    }
-
-    #location{
-      padding:12px 14px;
-      text-align:center;
-      font-size:20px;
-      font-weight:700;
-      letter-spacing:1px;
-    }
-
-    #stage{
-      position:relative;
-      overflow:hidden;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:12px;
-    }
-
-    .village-art{
-      width:100%;
-      height:100%;
-      min-height:190px;
-      display:grid;
-      place-items:center;
-      color:#ddd;
-      line-height:1.05;
-      font-size:clamp(9px,2.7vw,13px);
-      white-space:pre;
-      text-align:center;
-    }
-
-    .map-wrap{
-      width:100%;
-      height:100%;
-      overflow:auto;
-      padding:2px;
-    }
-
-    #map{
-      display:flex;
-      flex-direction:column;
-      gap:7px;
-      min-width:340px;
-    }
-
-    .floor-map{
-      position:relative;
-      width:100%;
-      min-width:340px;
-      height:88px;
-      border-bottom:1px dotted #333;
-    }
-
-    .floor-map:last-child{border-bottom:0}
-
-    .floor-label{
-      position:absolute;
-      left:0;
-      top:4px;
-      width:30px;
-      font-size:11px;
-      color:#999;
-      text-align:right;
-    }
-
-    .map-node{
-      position:absolute;
-      width:16px;
-      height:16px;
-      border:2px solid #555;
-      display:grid;
-      place-items:center;
-      font-size:9px;
-      color:#555;
-      background:#050505;
-      z-index:3;
-      transform:translate(-50%,-50%);
-    }
-
-    .map-node.revealed{
-      border-color:#fff;
-      color:#fff;
-    }
-
-    .map-node.current{
-      background:#fff;
-      color:#000;
-      border-color:#fff;
-    }
-
-    .map-node.boss{
-      border-style:double;
-      border-width:3px;
-    }
-
-    .map-node.hidden{
-      border-style:dashed;
-    }
-
-    .map-node.hidden.taken{
-      border-style:solid;
-      font-weight:900;
-    }
-
-    .map-edge{
-      position:absolute;
-      height:2px;
-      background:#444;
-      transform-origin:0 50%;
-      z-index:1;
-    }
-
-    .map-edge.revealed{background:#fff}
-
-    #status{
-      padding:10px 12px;
-      display:grid;
-      grid-template-columns:1fr 1fr;
-      gap:6px 12px;
-      font-size:13px;
-    }
-
-    .status-item{
-      display:flex;
-      justify-content:space-between;
-      gap:10px;
-      border-bottom:1px dotted #555;
-      padding-bottom:3px;
-    }
-
-    .status-item span:last-child{
-      font-weight:700;
-      text-align:right;
-    }
-
-    #log{
-      padding:10px 12px;
-      overflow:auto;
-      font-size:13px;
-      line-height:1.45;
-      white-space:pre-wrap;
-      scrollbar-width:none;
-    }
-    #log::-webkit-scrollbar{display:none}
-
-    .log-line{margin-bottom:5px}
-    .log-muted{color:#999}
-    .log-good{font-weight:700}
-
-    #controls{
-      display:grid;
-      grid-template-columns:repeat(4,1fr);
-      gap:7px;
-    }
-
-    button{
-      appearance:none;
-      border:3px solid #fff;
-      background:#000;
-      color:#fff;
-      min-height:54px;
-      font:700 13px "Courier New","Apple SD Gothic Neo",monospace;
-      padding:8px 5px;
-      cursor:pointer;
-      border-radius:0;
-    }
-
-    button:active{
-      background:#fff;
-      color:#000;
-    }
-
-    button:disabled{
-      border-color:#555;
-      color:#555;
-      cursor:default;
-    }
-
-    .wide{
-      grid-column:span 2;
-    }
-
-    #branchOverlay{
-      position:absolute;
-      inset:0;
-      background:rgba(0,0,0,.94);
-      display:none;
-      align-items:center;
-      justify-content:center;
-      padding:18px;
-      z-index:20;
-    }
-
-    #branchOverlay.show{display:flex}
-
-    .branch-card{
-      border:3px solid #fff;
-      width:100%;
-      max-width:360px;
-      padding:18px 14px 14px;
-      text-align:center;
-      background:#000;
-    }
-
-    .branch-title{
-      font-size:18px;
-      font-weight:700;
-      margin-bottom:10px;
-    }
-
-    #branchText{
-      line-height:1.5;
-      font-size:13px;
-      min-height:44px;
-    }
-
-    #branchCountdown{
-      font-size:34px;
-      margin:12px 0;
-      font-weight:900;
-    }
-
-    #branchBtn{
-      width:100%;
-      min-height:58px;
-      font-size:15px;
-    }
-
-    #toast{
-      position:fixed;
-      left:50%;
-      bottom:calc(18px + var(--safe-bottom));
-      transform:translateX(-50%);
-      background:#fff;
-      color:#000;
-      padding:8px 12px;
-      font:700 12px "Courier New","Apple SD Gothic Neo",monospace;
-      display:none;
-      z-index:50;
-      max-width:90vw;
-      text-align:center;
-    }
-
-    #toast.show{display:block}
-
-    @media (max-height:720px){
-      #game{
-        grid-template-rows:auto minmax(170px,1fr) auto 155px auto;
-      }
-      #log{font-size:12px}
-      button{min-height:48px}
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>생존 원정 MUD 프로토타입 v0.3</title>
+<style>
+:root{
+  --bg:#000;
+  --fg:#fff;
+  --muted:#9a9a9a;
+  --line:#fff;
+  --red:#ff3b30;
+  --safe-bottom:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box}
+html,body{
+  margin:0; min-height:100%; background:#000; color:#fff;
+  font-family:"Courier New","Apple SD Gothic Neo",monospace;
+  -webkit-user-select:none; user-select:none;
+}
+body{
+  display:flex; justify-content:center;
+  padding:12px 10px calc(12px + var(--safe-bottom));
+}
+#game{
+  width:min(100%,460px);
+  min-height:calc(100dvh - 24px - var(--safe-bottom));
+  display:grid;
+  grid-template-rows:auto minmax(230px,1fr) auto 190px auto;
+  gap:10px;
+}
+.box{
+  border:3px solid #fff;
+  background:#050505;
+}
+#location{
+  padding:11px 14px; text-align:center;
+  font-size:18px; font-weight:700; letter-spacing:1px;
+}
+#stage{
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:12px;
+}
+#stageContent{
+  width:100%;
+  height:100%;
+  min-height:205px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+.village-art{
+  width:100%; text-align:center; white-space:pre;
+  font-size:clamp(9px,2.6vw,13px); line-height:1.05;
+}
+.maze-board{
+  position:relative;
+  width:min(100%,340px);
+  height:220px;
+  margin:auto;
+}
+.maze-node{
+  position:absolute;
+  width:18px; height:18px;
+  transform:translate(-50%,-50%);
+  border:2px solid #555;
+  background:#050505;
+  color:#555;
+  display:grid;
+  place-items:center;
+  font-size:9px;
+  z-index:3;
+}
+.maze-node.revealed{border-color:#fff;color:#fff}
+.maze-node.current{background:#fff;color:#000;border-color:#fff}
+.maze-node.exit{border-style:double;border-width:3px}
+.maze-node.hidden-mark{
+  border-color:var(--red); color:var(--red); border-style:dashed;
+}
+.maze-edge{
+  position:absolute;
+  height:2px;
+  background:#333;
+  transform-origin:0 50%;
+  z-index:1;
+}
+.maze-edge.revealed{background:#fff}
+.maze-edge.backtrack{
+  background:#777;
+}
+.floor-badge{
+  position:absolute;
+  left:50%; top:6px; transform:translateX(-50%);
+  color:#aaa; font-size:12px; letter-spacing:1px;
+}
+#status{
+  padding:10px 12px;
+  display:grid; grid-template-columns:1fr 1fr;
+  gap:6px 12px; font-size:13px;
+}
+.status-item{
+  display:flex; justify-content:space-between; gap:10px;
+  border-bottom:1px dotted #555; padding-bottom:3px;
+}
+.status-item span:last-child{font-weight:700;text-align:right}
+#log{
+  padding:10px 12px;
+  overflow:auto;
+  font-size:13px; line-height:1.45; white-space:pre-wrap;
+  scrollbar-width:none;
+}
+#log::-webkit-scrollbar{display:none}
+.log-line{margin-bottom:5px}
+.log-muted{color:#999}
+.log-good{font-weight:700}
+.log-alert{color:var(--red);font-weight:900}
+#controls{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:7px;
+}
+button{
+  appearance:none;
+  border:3px solid #fff; border-radius:0;
+  background:#000; color:#fff;
+  min-height:54px;
+  font:700 13px "Courier New","Apple SD Gothic Neo",monospace;
+  padding:8px 5px;
+}
+button:active{background:#fff;color:#000}
+button:disabled{border-color:#555;color:#555}
+button.alert{
+  border-color:var(--red);
+  color:#fff;
+  background:#8b0000;
+  font-size:14px;
+  animation:pulse .65s steps(2,end) infinite;
+}
+button.alert:active{background:var(--red);color:#000}
+.wide{grid-column:span 2}
+.full{grid-column:1/-1}
+@keyframes pulse{50%{filter:brightness(1.7)}}
+#toast{
+  position:fixed; left:50%;
+  bottom:calc(18px + var(--safe-bottom));
+  transform:translateX(-50%);
+  background:#fff; color:#000;
+  padding:8px 12px; display:none; z-index:50;
+  font:700 12px "Courier New","Apple SD Gothic Neo",monospace;
+  max-width:90vw; text-align:center;
+}
+#toast.show{display:block}
+@media(max-height:720px){
+  #game{grid-template-rows:auto minmax(185px,1fr) auto 155px auto}
+  #stageContent{min-height:165px}
+  .maze-board{height:170px}
+  #log{font-size:12px}
+  button{min-height:48px}
+}
+</style>
 </head>
 <body>
-  <main id="game">
-    <section id="location" class="box">마을 광장</section>
+<main id="game">
+  <section id="location" class="box">마을 광장 · 휴식 중</section>
+  <section id="stage" class="box"><div id="stageContent"></div></section>
+  <section id="status" class="box"></section>
+  <section id="log" class="box"></section>
+  <section id="controls"></section>
+</main>
+<div id="toast"></div>
 
-    <section id="stage" class="box">
-      <div id="stageContent"></div>
+<script>
+"use strict";
 
-      <div id="branchOverlay">
-        <div class="branch-card">
-          <div class="branch-title">숨겨진 길 발견</div>
-          <div id="branchText">벽 뒤에서 희미한 통로가 발견되었습니다.</div>
-          <div id="branchCountdown">5</div>
-          <button id="branchBtn">숨겨진 길 탐색</button>
-        </div>
-      </div>
-    </section>
+const CONFIG = {
+  // 테스트용: 현실 1초 = 게임 1분. 실제 시간으로 시험할 때 false.
+  DEMO_MODE:true,
 
-    <section id="status" class="box"></section>
+  BASE_DUNGEON_MINUTES:60,
+  OFFLINE_MAX_MULTIPLIER:2,
+  REST_LIFE_RATE:0.70,
 
-    <section id="log" class="box"></section>
+  FLOORS:5,
+  MIN_ROOMS_PER_FLOOR:10,
+  MAX_ROOMS_PER_FLOOR:15,
 
-    <section id="controls"></section>
-  </main>
+  SECOND_BRANCH_CHANCE:0.28,
+  BRANCH_SECONDS:5,
 
-  <div id="toast"></div>
+  START_LIFE_MINUTES:5*24*60,
+  MAX_ACTION:6,
 
-  <script>
-    "use strict";
+  SAVE_KEY:"mud_idle_proto_v3"
+};
 
-    /******************************************************************
-     * 설정
-     *
-     * DEMO_MODE = true
-     *   실제 1시간짜리 던전을 기다리지 않고,
-     *   1 현실 초 = 1 게임 분으로 압축해 테스트합니다.
-     *
-     * 실제 서비스 시간으로 바꾸려면 DEMO_MODE = false 로 변경하세요.
-     ******************************************************************/
-    const CONFIG = {
-      DEMO_MODE: true,
+const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
 
-      // 온라인 기준 초기 던전 주파시간: 게임시간 60분
-      BASE_DUNGEON_MINUTES: 60,
+const $ = s => document.querySelector(s);
+const locationEl=$("#location");
+const stageContent=$("#stageContent");
+const statusEl=$("#status");
+const logEl=$("#log");
+const controlsEl=$("#controls");
+const toastEl=$("#toast");
 
-      // 오프라인 원정 생명시간 최대 소모: 온라인 기준의 2배
-      OFFLINE_MAX_MULTIPLIER: 2,
+let runtime={
+  lastFrameAt:Date.now(),
+  branchHandle:null
+};
 
-      // 휴식 시 생명시간 감소 30% 완화 = 70% 속도로 감소
-      REST_LIFE_RATE: 0.70,
+function defaultState(){
+  return {
+    version:3,
+    mode:"rest",
+    lifeMinutes:CONFIG.START_LIFE_MINUTES,
+    action:CONFIG.MAX_ACTION,
+    maxAction:CONFIG.MAX_ACTION,
+    level:1,
+    exp:0,
+    gold:0,
+    materials:0,
+    expeditionCount:0,
+    totalHiddenFound:0,
+    lastSeenAt:Date.now(),
+    logs:[
+      {text:"> 파티가 마을에서 휴식 중입니다.",cls:"log-muted"},
+      {text:"> 원정을 시작할 수 있습니다.",cls:""}
+    ],
+    expedition:null
+  };
+}
 
-      // 5층
-      FLOORS: 5,
+let state=loadState();
 
-      // 층당 10~15개 방
-      MIN_ROOMS_PER_FLOOR: 10,
-      MAX_ROOMS_PER_FLOOR: 15,
+function randInt(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+function clamp(n,min,max){return Math.max(min,Math.min(max,n))}
+function keyXY(x,y){return `${x},${y}`}
 
-      // 층당 숨겨진 갈림길 1개, 가끔 2개
-      SECOND_BRANCH_CHANCE: 0.28,
+function formatMinutes(m){
+  m=Math.max(0,Math.floor(m));
+  const d=Math.floor(m/1440);
+  const h=Math.floor((m%1440)/60);
+  const mm=m%60;
+  if(d>0)return `${d}일 ${h}시간 ${mm}분`;
+  if(h>0)return `${h}시간 ${mm}분`;
+  return `${mm}분`;
+}
+function formatShortMinutes(m){
+  m=Math.max(0,Math.floor(m));
+  const h=Math.floor(m/60), mm=m%60;
+  return h?`${h}h ${mm}m`:`${mm}m`;
+}
+function gameMinutesFromRealMs(ms){
+  return (ms/60000)*TIME_SCALE;
+}
+function expToNext(level){return 100+(level-1)*40}
 
-      // 숨겨진 길 선택 제한시간
-      BRANCH_SECONDS: 5,
+function addLog(text,cls=""){
+  state.logs.push({text,cls});
+  if(state.logs.length>100)state.logs.splice(0,state.logs.length-100);
+  renderLog();
+}
+function showToast(text,ms=1600){
+  toastEl.textContent=text;
+  toastEl.classList.add("show");
+  setTimeout(()=>toastEl.classList.remove("show"),ms);
+}
 
-      // 초기 생명시간: 5일
-      START_LIFE_MINUTES: 5 * 24 * 60,
+/* ---------- 미로 생성 ---------- */
 
-      // 초기 행동력(현재 프로토타입에서는 표시만)
-      MAX_ACTION: 6,
+/*
+  한 층 = 10~15개의 방으로 된 트리형 미로.
+  화면상 상/하/좌/우로 실제 방이 뻗고,
+  자동 탐험은 DFS 방식으로 진행한다.
+  막다른 길에 도착하면 이전 길로 되돌아간다.
+*/
+function makeMazeFloor(floorNo, roomCount){
+  const W=6, H=4;
+  const nodes=[{id:0,x:2,y:1,neighbors:[]}];
+  const occupied=new Map([[keyXY(2,1),0]]);
+  let safety=0;
 
-      SAVE_KEY: "mud_idle_proto_v2"
-    };
+  while(nodes.length<roomCount && safety<1000){
+    safety++;
+    const base=nodes[randInt(0,nodes.length-1)];
+    const dirs=[
+      {dx:1,dy:0},{dx:-1,dy:0},{dx:0,dy:1},{dx:0,dy:-1}
+    ].sort(()=>Math.random()-.5);
 
-    const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
-    // DEMO_MODE=true: 현실 1초가 게임 1분
-    // DEMO_MODE=false: 현실 1초가 게임 1초
+    let added=false;
+    for(const d of dirs){
+      const nx=base.x+d.dx, ny=base.y+d.dy;
+      if(nx<0||nx>=W||ny<0||ny>=H)continue;
+      const k=keyXY(nx,ny);
+      if(occupied.has(k))continue;
 
-    const $ = (sel) => document.querySelector(sel);
-    const stageContent = $("#stageContent");
-    const locationEl = $("#location");
-    const statusEl = $("#status");
-    const logEl = $("#log");
-    const controlsEl = $("#controls");
-    const branchOverlay = $("#branchOverlay");
-    const branchCountdown = $("#branchCountdown");
-    const branchBtn = $("#branchBtn");
-    const toastEl = $("#toast");
-
-    let runtime = {
-      lastFrameAt: Date.now(),
-      tickHandle: null,
-      branchHandle: null,
-      branchStartedAt: null
-    };
-
-    function defaultState(){
-      return {
-        version: 1,
-        mode: "rest", // rest | expedition
-        lifeMinutes: CONFIG.START_LIFE_MINUTES,
-        action: CONFIG.MAX_ACTION,
-        maxAction: CONFIG.MAX_ACTION,
-        level: 1,
-        exp: 0,
-        gold: 0,
-        materials: 0,
-        expeditionCount: 0,
-        totalHiddenFound: 0,
-        lastSeenAt: Date.now(),
-        logs: [
-          { text: "> 파티가 마을에서 휴식 중입니다.", cls: "log-muted" },
-          { text: "> 원정을 시작할 수 있습니다.", cls: "" }
-        ],
-        expedition: null,
-        pendingSummary: null
-      };
+      const id=nodes.length;
+      nodes.push({id,x:nx,y:ny,neighbors:[base.id]});
+      base.neighbors.push(id);
+      occupied.set(k,id);
+      added=true;
+      break;
     }
 
-    let state = loadState();
-
-    function randInt(min, max){
-      return Math.floor(Math.random() * (max - min + 1)) + min;
+    if(!added && safety>500){
+      // 극히 드물게 공간이 막히면 처음부터 다시 생성
+      return makeMazeFloor(floorNo,roomCount);
     }
+  }
 
-    function clamp(n, min, max){
-      return Math.max(min, Math.min(max, n));
+  // 시작점에서 부모/깊이 계산
+  const parent=Array(nodes.length).fill(-1);
+  const depth=Array(nodes.length).fill(0);
+  const q=[0];
+  parent[0]=-2;
+  while(q.length){
+    const u=q.shift();
+    for(const v of nodes[u].neighbors){
+      if(parent[v]!==-1)continue;
+      parent[v]=u;
+      depth[v]=depth[u]+1;
+      q.push(v);
     }
+  }
 
-    function formatMinutes(totalMinutes){
-      totalMinutes = Math.max(0, Math.floor(totalMinutes));
-      const d = Math.floor(totalMinutes / 1440);
-      const h = Math.floor((totalMinutes % 1440) / 60);
-      const m = totalMinutes % 60;
+  // 가장 멀리 있는 막다른 방을 출구로 사용
+  const leaves=nodes.filter(n=>n.id!==0 && n.neighbors.length===1);
+  leaves.sort((a,b)=>depth[b.id]-depth[a.id]);
+  const exitId=leaves.length?leaves[0].id:nodes.length-1;
 
-      if(d > 0) return `${d}일 ${h}시간 ${m}분`;
-      if(h > 0) return `${h}시간 ${m}분`;
-      return `${m}분`;
-    }
+  const exitPath=new Set();
+  let p=exitId;
+  while(p>=0){
+    exitPath.add(p);
+    if(p===0)break;
+    p=parent[p];
+  }
 
-    function formatShortMinutes(totalMinutes){
-      totalMinutes = Math.max(0, Math.floor(totalMinutes));
-      const h = Math.floor(totalMinutes / 60);
-      const m = totalMinutes % 60;
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    }
+  // DFS 이동 액션.
+  // 출구가 속한 가지를 항상 마지막에 탐험하여 최종 위치가 출구가 되도록 한다.
+  const actions=[];
+  function walk(u,par){
+    let children=nodes[u].neighbors.filter(v=>v!==par);
+    children.sort((a,b)=>{
+      const ae=exitPath.has(a)?1:0;
+      const be=exitPath.has(b)?1:0;
+      if(ae!==be)return ae-be; // 출구 가지를 마지막
+      return Math.random()-.5;
+    });
 
-    function gameMinutesFromRealMs(ms){
-      // 실제 서비스: ms -> 분
-      // 데모: 실제 1초 -> 게임 1분
-      return (ms / 60000) * TIME_SCALE;
-    }
-
-    function realMsFromGameMinutes(gameMinutes){
-      return (gameMinutes / TIME_SCALE) * 60000;
-    }
-
-    function addLog(text, cls=""){
-      state.logs.push({ text, cls });
-      if(state.logs.length > 100){
-        state.logs.splice(0, state.logs.length - 100);
-      }
-      renderLog();
-      saveState();
-    }
-
-    function showToast(text, ms=1800){
-      toastEl.textContent = text;
-      toastEl.classList.add("show");
-      setTimeout(() => toastEl.classList.remove("show"), ms);
-    }
-
-    function createDungeon(){
-      const floors = [];
-      let globalIndex = 0;
-
-      for(let f=0; f<CONFIG.FLOORS; f++){
-        const roomCount = randInt(CONFIG.MIN_ROOMS_PER_FLOOR, CONFIG.MAX_ROOMS_PER_FLOOR);
-        const branchCount = Math.random() < CONFIG.SECOND_BRANCH_CHANCE ? 2 : 1;
-
-        // 실제 진행 순서는 자동으로 한 줄이지만,
-        // 미니맵에서는 파티가 여러 갈림길을 거쳐 전진하는 형태로 보이도록
-        // 각 방에 y 좌표를 부여한다. 플레이어가 일반 갈림길을 선택할 필요는 없다.
-        const rooms = [];
-        let lane = 1; // 0=상단, 1=중앙, 2=하단
-        const forcedTurns = new Set();
-
-        while(forcedTurns.size < Math.min(3, Math.floor(roomCount/3))){
-          forcedTurns.add(randInt(2, roomCount-3));
-        }
-
-        for(let r=0; r<roomCount; r++){
-          if(forcedTurns.has(r)){
-            const choices = [0,1,2].filter(v => v !== lane);
-            lane = choices[randInt(0, choices.length-1)];
-          }else if(r > 1 && r < roomCount-2 && Math.random() < 0.22){
-            lane = clamp(lane + (Math.random() < 0.5 ? -1 : 1), 0, 2);
-          }
-
-          rooms.push({
-            globalIndex,
-            localIndex:r,
-            lane,
-            revealed:false,
-            cleared:false
-          });
-          globalIndex++;
-        }
-
-        // 숨겨진 갈림길은 일반 진행 경로와 별개.
-        const branches = [];
-        const candidates = [];
-        for(let i=2; i<roomCount-2; i++) candidates.push(i);
-
-        for(let b=0; b<branchCount; b++){
-          if(candidates.length === 0) break;
-          const pick = randInt(0, candidates.length - 1);
-          const roomLocalIndex = candidates.splice(pick,1)[0];
-          const baseLane = rooms[roomLocalIndex].lane;
-          const hiddenLane = baseLane === 0 ? 1 : (baseLane === 2 ? 1 : (Math.random()<0.5 ? 0 : 2));
-
-          branches.push({
-            roomLocalIndex,
-            hiddenLane,
-            triggered:false,
-            taken:false,
-            missed:false
-          });
-        }
-
-        floors.push({
-          floor:f+1,
-          rooms,
-          branches
-        });
-      }
-
-      return {
-        id: `exp_${Date.now()}`,
-        startedAt: Date.now(),
-        baseDurationMinutes: CONFIG.BASE_DUNGEON_MINUTES,
-        maxLifeCostMinutes: CONFIG.BASE_DUNGEON_MINUTES * CONFIG.OFFLINE_MAX_MULTIPLIER,
-        progressMinutes: 0,
-        lifeCostMinutes: 0,
-        currentGlobalRoom: 0,
-        totalRooms: globalIndex,
-        floors,
-        expEarned:0,
-        goldEarned:0,
-        materialsEarned:0,
-        hiddenTaken:0,
-        pendingBranch:null,
-        complete:false
-      };
-    }
-
-    function startExpedition(){
-      if(state.mode === "expedition") return;
-
-      state.mode = "expedition";
-      state.expedition = createDungeon();
-      state.expeditionCount++;
-      state.pendingSummary = null;
-
-      state.logs = [];
-      addLog("> 원정을 시작합니다.");
-      addLog("> 파티가 자동으로 던전을 탐색합니다.", "log-muted");
-      addLog(CONFIG.DEMO_MODE
-        ? "> 데모 모드: 1 현실 초 = 1 게임 분입니다."
-        : "> 온라인 기준 주파시간은 약 1시간입니다.", "log-muted");
-
-      revealRoomsByProgress();
-      saveState();
-      renderAll();
-      runtime.lastFrameAt = Date.now();
-    }
-
-    function roomTargetFromProgress(exp){
-      const ratio = clamp(exp.progressMinutes / exp.baseDurationMinutes, 0, 1);
-      return Math.min(exp.totalRooms - 1, Math.floor(ratio * exp.totalRooms));
-    }
-
-    function locateGlobalRoom(exp, globalIndex){
-      for(const floor of exp.floors){
-        const room = floor.rooms.find(r => r.globalIndex === globalIndex);
-        if(room) return { floor, room };
-      }
-      return null;
-    }
-
-    function triggerRoomReward(exp, globalIndex, silent=false){
-      const found = locateGlobalRoom(exp, globalIndex);
-      if(!found) return;
-
-      const {floor, room} = found;
-      if(room.cleared) return;
-      room.cleared = true;
-      room.revealed = true;
-
-      const expGain = randInt(4, 10);
-      const matGain = randInt(0, 3);
-      const goldGain = randInt(0, 5);
-
-      exp.expEarned += expGain;
-      exp.materialsEarned += matGain;
-      exp.goldEarned += goldGain;
-
-      if(!silent){
-        const parts = [`EXP +${expGain}`];
-        if(matGain) parts.push(`재료 +${matGain}`);
-        if(goldGain) parts.push(`재화 +${goldGain}`);
-        addLog(`> ${floor.floor}F ${room.localIndex+1}번 방 탐색\n  ${parts.join(" / ")}`);
-      }
-
-      const branch = floor.branches.find(b => b.roomLocalIndex === room.localIndex);
-      if(branch && !branch.triggered && !branch.missed){
-        startBranchPrompt(floor, branch);
+    for(const v of children){
+      const isExitBranch=exitPath.has(v);
+      actions.push({from:u,to:v,backtrack:false});
+      walk(v,u);
+      if(!isExitBranch){
+        actions.push({from:v,to:u,backtrack:true});
       }
     }
+  }
+  walk(0,-1);
 
-    function revealRoomsByProgress({silent=false} = {}){
-      const exp = state.expedition;
-      if(!exp) return;
+  // 현재 알고 있는 나무에서 출구로 끝나지 않았을 경우 보정
+  if(actions.length && actions[actions.length-1].to!==exitId){
+    // tree 특성상 거의 발생하지 않지만 안전장치
+    let cur=actions.length?actions[actions.length-1].to:0;
+    const route=[];
+    while(cur!==0){route.push(cur);cur=parent[cur]}
+    route.push(0);
+  }
 
-      const target = roomTargetFromProgress(exp);
+  // 숨겨진 갈림길 1개, 가끔 2개
+  const branchCount=Math.random()<CONFIG.SECOND_BRANCH_CHANCE?2:1;
+  const candidates=nodes
+    .filter(n=>n.id!==0 && n.id!==exitId)
+    .map(n=>n.id)
+    .sort(()=>Math.random()-.5);
 
-      for(let i=exp.currentGlobalRoom; i<=target; i++){
-        if(exp.pendingBranch) break;
-        exp.currentGlobalRoom = i;
-        triggerRoomReward(exp, i, silent);
-      }
+  const branches=candidates.slice(0,branchCount).map(nodeId=>({
+    nodeId,
+    triggered:false,
+    taken:false,
+    missed:false
+  }));
 
-      // 현재 위치 표시용
-      exp.currentGlobalRoom = Math.max(exp.currentGlobalRoom, target);
+  return {
+    floor:floorNo,
+    width:W,
+    height:H,
+    nodes,
+    parent,
+    exitId,
+    actions,
+    branches,
+    revealedNodes:[0],
+    revealedEdges:[],
+    currentNode:0,
+    finished:false
+  };
+}
 
-      if(exp.progressMinutes >= exp.baseDurationMinutes && !exp.pendingBranch){
-        completeExpedition("online");
-      }
+function createDungeon(){
+  const floors=[];
+  let totalActions=0;
+
+  for(let f=1;f<=CONFIG.FLOORS;f++){
+    const floor=makeMazeFloor(
+      f,
+      randInt(CONFIG.MIN_ROOMS_PER_FLOOR,CONFIG.MAX_ROOMS_PER_FLOOR)
+    );
+    totalActions+=floor.actions.length;
+    floors.push(floor);
+  }
+
+  return {
+    id:`exp_${Date.now()}`,
+    startedAt:Date.now(),
+    baseDurationMinutes:CONFIG.BASE_DUNGEON_MINUTES,
+    maxLifeCostMinutes:CONFIG.BASE_DUNGEON_MINUTES*CONFIG.OFFLINE_MAX_MULTIPLIER,
+
+    progressMinutes:0,
+    lifeCostMinutes:0,
+
+    floors,
+    totalActions,
+    actionCursor:0,
+    currentFloorIndex:0,
+
+    visitedRewardKeys:[],
+    expEarned:0,
+    goldEarned:0,
+    materialsEarned:0,
+    hiddenTaken:0,
+
+    pendingBranch:null,
+    complete:false
+  };
+}
+
+function flattenActionAt(exp,index){
+  let cursor=index;
+  for(let fi=0;fi<exp.floors.length;fi++){
+    const floor=exp.floors[fi];
+    if(cursor<floor.actions.length){
+      return {floorIndex:fi,floor,action:floor.actions[cursor],localActionIndex:cursor};
     }
+    cursor-=floor.actions.length;
+  }
+  return null;
+}
 
-    function startBranchPrompt(floor, branch){
-      if(!state.expedition || state.expedition.pendingBranch) return;
+function targetActionFromProgress(exp){
+  const ratio=clamp(exp.progressMinutes/exp.baseDurationMinutes,0,1);
+  return Math.min(exp.totalActions,Math.floor(ratio*exp.totalActions));
+}
 
-      branch.triggered = true;
-      state.expedition.pendingBranch = {
-        floor:floor.floor,
-        roomLocalIndex:branch.roomLocalIndex,
-        expiresAt:Date.now() + CONFIG.BRANCH_SECONDS*1000
-      };
+function edgeKey(a,b){
+  return a<b?`${a}-${b}`:`${b}-${a}`;
+}
 
-      addLog(`> ${floor.floor}F에서 숨겨진 갈림길을 발견했습니다.`);
-      showBranchPrompt();
-      saveState();
+function rewardRoom(exp,floor,nodeId,silent=false){
+  const rewardKey=`${floor.floor}:${nodeId}`;
+  if(exp.visitedRewardKeys.includes(rewardKey))return;
+
+  exp.visitedRewardKeys.push(rewardKey);
+
+  const expGain=randInt(4,10);
+  const matGain=randInt(0,3);
+  const goldGain=randInt(0,5);
+
+  exp.expEarned+=expGain;
+  exp.materialsEarned+=matGain;
+  exp.goldEarned+=goldGain;
+
+  if(!silent){
+    const parts=[`EXP +${expGain}`];
+    if(matGain)parts.push(`재료 +${matGain}`);
+    if(goldGain)parts.push(`재화 +${goldGain}`);
+    addLog(`> ${floor.floor}F 방 탐색 완료\n  ${parts.join(" / ")}`);
+  }
+
+  const branch=floor.branches.find(b=>b.nodeId===nodeId);
+  if(branch && !branch.triggered && !branch.missed){
+    startBranchPrompt(floor,branch);
+  }
+}
+
+function processAction(exp,info,{silent=false,allowPrompt=true}={}){
+  const {floorIndex,floor,action}=info;
+
+  if(exp.currentFloorIndex!==floorIndex){
+    exp.currentFloorIndex=floorIndex;
+    if(!silent)addLog(`> ${floor.floor}F 진입`, "log-good");
+  }
+
+  floor.currentNode=action.to;
+
+  if(!floor.revealedNodes.includes(action.to)){
+    floor.revealedNodes.push(action.to);
+  }
+  const ek=edgeKey(action.from,action.to);
+  if(!floor.revealedEdges.includes(ek)){
+    floor.revealedEdges.push(ek);
+  }
+
+  if(action.backtrack){
+    if(!silent){
+      addLog("> 막다른 길입니다. 왔던 길로 되돌아갑니다.", "log-muted");
     }
+  }else{
+    rewardRoom(exp,floor,action.to,silent);
+    if(!allowPrompt && exp.pendingBranch){
+      // 오프라인 진행 중 발견한 숨겨진 길은 선택 기회를 놓친다.
+      const found=findPendingBranchObject();
+      if(found?.branch)found.branch.missed=true;
+      exp.pendingBranch=null;
+    }
+  }
 
-    function showBranchPrompt(){
-      const exp = state.expedition;
-      if(!exp || !exp.pendingBranch) return;
+  // 층의 마지막 액션이면 층 완료
+  const last=floor.actions[floor.actions.length-1];
+  if(last===action){
+    floor.finished=true;
+  }
+}
 
-      branchOverlay.classList.add("show");
-      runtime.branchStartedAt = Date.now();
+function advanceToProgress({silent=false,allowPrompt=true}={}){
+  const exp=state.expedition;
+  if(!exp)return;
 
+  const target=targetActionFromProgress(exp);
+
+  while(exp.actionCursor<target){
+    if(exp.pendingBranch && allowPrompt)break;
+
+    const info=flattenActionAt(exp,exp.actionCursor);
+    if(!info)break;
+
+    processAction(exp,info,{silent,allowPrompt});
+    exp.actionCursor++;
+
+    if(exp.pendingBranch && allowPrompt)break;
+  }
+
+  if(exp.actionCursor>=exp.totalActions && !exp.pendingBranch){
+    completeExpedition("online");
+  }
+}
+
+/* ---------- 숨겨진 길 ---------- */
+
+function startBranchPrompt(floor,branch){
+  if(!state.expedition || state.expedition.pendingBranch)return;
+
+  branch.triggered=true;
+  state.expedition.pendingBranch={
+    floor:floor.floor,
+    nodeId:branch.nodeId,
+    expiresAt:Date.now()+CONFIG.BRANCH_SECONDS*1000
+  };
+
+  addLog(`> ${floor.floor}F에서 숨겨진 통로를 발견했습니다!`,"log-alert");
+  startBranchTimer();
+  renderControls();
+  renderMap();
+}
+
+function startBranchTimer(){
+  clearInterval(runtime.branchHandle);
+  runtime.branchHandle=setInterval(()=>{
+    const exp=state.expedition;
+    if(!exp?.pendingBranch){
       clearInterval(runtime.branchHandle);
-      runtime.branchHandle = setInterval(() => {
-        if(!state.expedition || !state.expedition.pendingBranch){
-          hideBranchPrompt();
-          return;
-        }
-
-        const remainMs = state.expedition.pendingBranch.expiresAt - Date.now();
-        const remainSec = Math.max(0, Math.ceil(remainMs / 1000));
-        branchCountdown.textContent = remainSec;
-
-        if(remainMs <= 0){
-          missBranch();
-        }
-      }, 100);
+      runtime.branchHandle=null;
+      return;
     }
 
-    function hideBranchPrompt(){
-      branchOverlay.classList.remove("show");
-      clearInterval(runtime.branchHandle);
-      runtime.branchHandle = null;
+    if(Date.now()>=exp.pendingBranch.expiresAt){
+      missBranch();
+      return;
+    }
+    renderControls();
+  },100);
+}
+
+function findPendingBranchObject(){
+  const exp=state.expedition;
+  if(!exp?.pendingBranch)return null;
+  const floor=exp.floors.find(f=>f.floor===exp.pendingBranch.floor);
+  if(!floor)return null;
+  const branch=floor.branches.find(b=>b.nodeId===exp.pendingBranch.nodeId);
+  return {floor,branch};
+}
+
+function takeBranch(){
+  const exp=state.expedition;
+  if(!exp?.pendingBranch)return;
+
+  const found=findPendingBranchObject();
+  if(!found)return;
+
+  found.branch.taken=true;
+  exp.hiddenTaken++;
+  state.totalHiddenFound++;
+
+  const roll=Math.random();
+  if(roll<0.12){
+    const bonus=randInt(25,40);
+    exp.expEarned+=bonus;
+    addLog(`> 숨겨진 방에서 오래된 기록을 발견했습니다.\n  EXP +${bonus}`,"log-good");
+  }else if(roll<0.48){
+    const gold=randInt(15,30);
+    exp.goldEarned+=gold;
+    addLog(`> 숨겨진 보관함 발견!\n  재화 +${gold}`,"log-good");
+  }else{
+    const mat=randInt(5,10);
+    const bonus=randInt(8,18);
+    exp.materialsEarned+=mat;
+    exp.expEarned+=bonus;
+    addLog(`> 숨겨진 방 탐색 완료\n  재료 +${mat} / EXP +${bonus}`,"log-good");
+  }
+
+  exp.pendingBranch=null;
+  clearInterval(runtime.branchHandle);
+  runtime.branchHandle=null;
+  renderControls();
+  renderMap();
+  saveState();
+}
+
+function missBranch(){
+  const exp=state.expedition;
+  if(!exp?.pendingBranch)return;
+
+  const found=findPendingBranchObject();
+  if(found?.branch)found.branch.missed=true;
+
+  exp.pendingBranch=null;
+  clearInterval(runtime.branchHandle);
+  runtime.branchHandle=null;
+
+  addLog("> 숨겨진 통로를 지나쳤습니다.","log-muted");
+  renderControls();
+  renderMap();
+  saveState();
+}
+
+/* ---------- 원정 / 시간 ---------- */
+
+function startExpedition(){
+  if(state.mode==="expedition")return;
+
+  state.mode="expedition";
+  state.expedition=createDungeon();
+  state.expeditionCount++;
+  state.logs=[];
+
+  addLog("> 원정을 시작합니다.");
+  addLog("> 파티가 미로를 자동으로 탐색합니다.","log-muted");
+  addLog("> 막다른 길에서는 자동으로 되돌아옵니다.","log-muted");
+  if(CONFIG.DEMO_MODE){
+    addLog("> 데모 모드: 1 현실 초 = 1 게임 분입니다.","log-muted");
+  }
+
+  renderAll();
+  saveState();
+  runtime.lastFrameAt=Date.now();
+}
+
+function completeExpedition(source="online",restMinutesAfter=0){
+  const exp=state.expedition;
+  if(!exp||exp.complete)return;
+  exp.complete=true;
+
+  // 미처 진행하지 못한 경우 오프라인 정산용으로 끝까지 처리
+  while(exp.actionCursor<exp.totalActions){
+    const info=flattenActionAt(exp,exp.actionCursor);
+    if(!info)break;
+    processAction(exp,info,{silent:true,allowPrompt:false});
+    exp.actionCursor++;
+  }
+
+  for(const floor of exp.floors){
+    for(const branch of floor.branches){
+      if(!branch.taken && !branch.missed)branch.missed=true;
+    }
+  }
+
+  state.gold+=exp.goldEarned;
+  state.materials+=exp.materialsEarned;
+
+  const oldLevel=state.level;
+  state.exp+=exp.expEarned;
+  while(state.exp>=expToNext(state.level)){
+    state.exp-=expToNext(state.level);
+    state.level++;
+  }
+
+  state.mode="rest";
+  state.logs=[];
+
+  addLog("> 원정 완료. 파티가 마을로 복귀했습니다.","log-good");
+  addLog(`> EXP +${exp.expEarned} / 재화 +${exp.goldEarned} / 재료 +${exp.materialsEarned}`);
+  addLog(`> 원정 생명시간 소모: ${formatMinutes(exp.lifeCostMinutes)}`);
+
+  if(restMinutesAfter>0){
+    addLog(`> 복귀 후 자동 휴식: ${formatMinutes(restMinutesAfter)}`,"log-muted");
+  }
+  if(state.level>oldLevel){
+    addLog(`> LEVEL UP! Lv.${state.level}`,"log-good");
+  }
+  addLog("> 자동 휴식 상태로 전환했습니다.","log-muted");
+
+  state.expedition=null;
+  clearInterval(runtime.branchHandle);
+  runtime.branchHandle=null;
+
+  renderAll();
+  saveState();
+}
+
+function onlineTick(){
+  const now=Date.now();
+  const realDelta=now-runtime.lastFrameAt;
+  runtime.lastFrameAt=now;
+
+  if(realDelta<=0||realDelta>5000)return;
+
+  const gameDelta=gameMinutesFromRealMs(realDelta);
+
+  if(state.mode==="expedition" && state.expedition){
+    // 숨겨진 길 선택 중에도 생명시간은 흐르지만 탐험 진행은 잠시 정지.
+    state.lifeMinutes-=gameDelta;
+    state.expedition.lifeCostMinutes+=gameDelta;
+
+    if(!state.expedition.pendingBranch){
+      state.expedition.progressMinutes+=gameDelta;
+      advanceToProgress({silent:false,allowPrompt:true});
     }
 
-    function findPendingBranchObject(){
-      const exp = state.expedition;
-      if(!exp || !exp.pendingBranch) return null;
+    if(state.lifeMinutes<=0){
+      state.lifeMinutes=0;
+      addLog("> 생명시간이 모두 소진되었습니다.","log-alert");
+      state.mode="rest";
+      state.expedition=null;
+    }
+  }else{
+    state.lifeMinutes-=gameDelta*CONFIG.REST_LIFE_RATE;
+    if(state.lifeMinutes<0)state.lifeMinutes=0;
+  }
 
-      const floor = exp.floors.find(f => f.floor === exp.pendingBranch.floor);
-      if(!floor) return null;
-      const branch = floor.branches.find(b => b.roomLocalIndex === exp.pendingBranch.roomLocalIndex);
-      return {floor, branch};
+  state.lastSeenAt=now;
+  renderLocation();
+  renderStatus();
+  renderMap();
+}
+
+function reconcileOffline(){
+  const now=Date.now();
+  const awayMs=Math.max(0,now-(state.lastSeenAt||now));
+
+  if(awayMs<1000){
+    state.lastSeenAt=now;
+    runtime.lastFrameAt=now;
+    return;
+  }
+
+  const awayMin=gameMinutesFromRealMs(awayMs);
+
+  if(state.mode==="expedition" && state.expedition){
+    const exp=state.expedition;
+
+    // 기존 5초 선택창이 열린 채 나갔다면 놓친 것으로 처리
+    if(exp.pendingBranch){
+      const found=findPendingBranchObject();
+      if(found?.branch)found.branch.missed=true;
+      exp.pendingBranch=null;
     }
 
-    function takeBranch(){
-      const exp = state.expedition;
-      if(!exp || !exp.pendingBranch) return;
+    const remainingBase=Math.max(0,exp.baseDurationMinutes-exp.progressMinutes);
 
-      const found = findPendingBranchObject();
-      if(!found) return;
+    if(awayMin<remainingBase){
+      exp.progressMinutes+=awayMin;
+      exp.lifeCostMinutes+=awayMin;
+      state.lifeMinutes-=awayMin;
+      advanceToProgress({silent:true,allowPrompt:false});
+      addLog(`> 오프라인 원정 ${formatMinutes(awayMin)} 반영`,"log-muted");
+    }else{
+      /*
+        온라인 기준 완료시각을 넘긴 뒤 재접속:
+        실제 경과시간만큼 원정 생명시간을 쓰되,
+        총 원정 소모는 온라인 기준 시간의 2배에서 고정.
+        그 이후 시간은 마을 자동 휴식.
+      */
+      const maxRemain=Math.max(0,exp.maxLifeCostMinutes-exp.lifeCostMinutes);
+      const expeditionCost=Math.min(awayMin,maxRemain);
 
-      found.branch.taken = true;
-      exp.hiddenTaken++;
-      state.totalHiddenFound++;
+      exp.progressMinutes=exp.baseDurationMinutes;
+      exp.lifeCostMinutes+=expeditionCost;
+      state.lifeMinutes-=expeditionCost;
 
-      const roll = Math.random();
-      let text = "";
-      if(roll < 0.10){
-        const bonus = randInt(25,40);
-        exp.expEarned += bonus;
-        text = `> 숨겨진 방은 비어 있었습니다.\n  대신 오래된 기록을 발견했습니다. EXP +${bonus}`;
-      }else if(roll < 0.45){
-        const gold = randInt(15,30);
-        exp.goldEarned += gold;
-        text = `> 숨겨진 보관함 발견!\n  재화 +${gold}`;
-      }else{
-        const mat = randInt(5,10);
-        const bonusExp = randInt(8,18);
-        exp.materialsEarned += mat;
-        exp.expEarned += bonusExp;
-        text = `> 숨겨진 방 탐색 완료\n  재료 +${mat} / EXP +${bonusExp}`;
-      }
+      const restAway=Math.max(0,awayMin-expeditionCost);
+      state.lifeMinutes-=restAway*CONFIG.REST_LIFE_RATE;
+      if(state.lifeMinutes<0)state.lifeMinutes=0;
 
-      exp.pendingBranch = null;
-      hideBranchPrompt();
-      addLog(text, "log-good");
-      saveState();
-      renderAll();
+      completeExpedition("offline",restAway);
     }
+  }else{
+    const cost=awayMin*CONFIG.REST_LIFE_RATE;
+    state.lifeMinutes-=cost;
+    if(state.lifeMinutes<0)state.lifeMinutes=0;
 
-    function missBranch(){
-      const exp = state.expedition;
-      if(!exp || !exp.pendingBranch) return;
-
-      const found = findPendingBranchObject();
-      if(found?.branch) found.branch.missed = true;
-
-      exp.pendingBranch = null;
-      hideBranchPrompt();
-      addLog("> 숨겨진 길을 지나쳤습니다.", "log-muted");
-      saveState();
-      renderAll();
+    if(awayMin>=1){
+      addLog(`> 휴식 ${formatMinutes(awayMin)} 반영\n  생명시간 -${formatMinutes(cost)}`,"log-muted");
     }
+  }
 
-    branchBtn.addEventListener("click", takeBranch);
+  state.lastSeenAt=now;
+  runtime.lastFrameAt=now;
+  saveState();
+  renderAll();
+}
 
-    function completeExpedition(source="online", restMinutesAfter=0){
-      const exp = state.expedition;
-      if(!exp || exp.complete) return;
+/* ---------- 렌더 ---------- */
 
-      exp.complete = true;
-      exp.progressMinutes = Math.max(exp.progressMinutes, exp.baseDurationMinutes);
+function renderAll(){
+  renderLocation();
+  renderStage();
+  renderStatus();
+  renderLog();
+  renderControls();
+}
 
-      // 남은 일반 방은 완료 처리
-      for(const floor of exp.floors){
-        for(const room of floor.rooms){
-          if(!room.cleared){
-            room.revealed = true;
-            room.cleared = true;
-            const expGain = randInt(3,8);
-            exp.expEarned += expGain;
-          }
-        }
+function renderLocation(){
+  if(state.mode==="expedition" && state.expedition){
+    const floor=state.expedition.floors[state.expedition.currentFloorIndex];
+    locationEl.textContent=`폐허 던전 · ${floor.floor}F`;
+  }else{
+    locationEl.textContent="마을 광장 · 휴식 중";
+  }
+}
 
-        // 오프라인 완료라면 숨은 길은 자동으로 놓친다.
-        for(const branch of floor.branches){
-          if(!branch.triggered && !branch.taken){
-            branch.missed = true;
-          }
-        }
-      }
-
-      state.gold += exp.goldEarned;
-      state.materials += exp.materialsEarned;
-
-      const oldLevel = state.level;
-      state.exp += exp.expEarned;
-      while(state.exp >= expToNext(state.level)){
-        state.exp -= expToNext(state.level);
-        state.level++;
-      }
-
-      state.mode = "rest";
-
-      state.pendingSummary = {
-        lifeCostMinutes: Math.round(exp.lifeCostMinutes),
-        expEarned: exp.expEarned,
-        goldEarned: exp.goldEarned,
-        materialsEarned: exp.materialsEarned,
-        hiddenTaken: exp.hiddenTaken,
-        source,
-        leveled: state.level > oldLevel,
-        restMinutesAfter: Math.round(restMinutesAfter)
-      };
-
-      state.logs = [];
-      addLog("> 원정 완료. 파티가 마을로 복귀했습니다.", "log-good");
-      addLog(`> EXP +${exp.expEarned} / 재화 +${exp.goldEarned} / 재료 +${exp.materialsEarned}`);
-      addLog(`> 원정 생명시간 소모: ${formatMinutes(exp.lifeCostMinutes)}`);
-      if(restMinutesAfter > 0){
-        addLog(`> 복귀 후 자동 휴식: ${formatMinutes(restMinutesAfter)}`, "log-muted");
-      }
-      if(state.level > oldLevel){
-        addLog(`> LEVEL UP! Lv.${state.level}`, "log-good");
-      }
-      addLog("> 자동 휴식 상태로 전환합니다.", "log-muted");
-
-      state.expedition = null;
-      hideBranchPrompt();
-      saveState();
-      renderAll();
-    }
-
-    function expToNext(level){
-      return 100 + (level-1)*40;
-    }
-
-    function onlineTick(){
-      const now = Date.now();
-      let realDelta = now - runtime.lastFrameAt;
-      runtime.lastFrameAt = now;
-
-      if(realDelta <= 0 || realDelta > 5000){
-        // 긴 정지는 visibility 복귀 로직에서 정산
-        return;
-      }
-
-      const gameDeltaMin = gameMinutesFromRealMs(realDelta);
-
-      if(state.mode === "expedition" && state.expedition){
-        // 숨은 길 선택 중에도 생명시간은 흐르지만,
-        // 던전 진행 자체는 5초 동안 잠깐 멈춘다.
-        state.lifeMinutes -= gameDeltaMin;
-        state.expedition.lifeCostMinutes += gameDeltaMin;
-
-        if(!state.expedition.pendingBranch){
-          state.expedition.progressMinutes += gameDeltaMin;
-          revealRoomsByProgress();
-        }
-
-        if(state.lifeMinutes <= 0){
-          state.lifeMinutes = 0;
-          addLog("> 생명시간이 모두 소진되었습니다.", "log-good");
-          state.mode = "rest";
-          state.expedition = null;
-          hideBranchPrompt();
-        }
-      }else{
-        // 마을 = 자동 휴식
-        state.lifeMinutes -= gameDeltaMin * CONFIG.REST_LIFE_RATE;
-        if(state.lifeMinutes < 0) state.lifeMinutes = 0;
-      }
-
-      state.lastSeenAt = now;
-      renderStatus();
-      renderMap();
-    }
-
-    function reconcileOffline(){
-      const now = Date.now();
-      const awayMs = Math.max(0, now - (state.lastSeenAt || now));
-
-      // 너무 짧은 앱 전환은 무시
-      if(awayMs < 1000){
-        state.lastSeenAt = now;
-        runtime.lastFrameAt = now;
-        return;
-      }
-
-      const awayMin = gameMinutesFromRealMs(awayMs);
-
-      if(state.mode === "expedition" && state.expedition){
-        const exp = state.expedition;
-
-        // 오프라인 중에는 숨은 갈림길 선택을 할 수 없다.
-        if(exp.pendingBranch){
-          const found = findPendingBranchObject();
-          if(found?.branch) found.branch.missed = true;
-          exp.pendingBranch = null;
-        }
-
-        const beforeProgress = exp.progressMinutes;
-        const projectedProgress = beforeProgress + awayMin;
-
-        if(projectedProgress < exp.baseDurationMinutes){
-          // 아직 기본 주파시간 전: 실시간만큼 그대로 진행/차감
-          exp.progressMinutes += awayMin;
-          exp.lifeCostMinutes += awayMin;
-          state.lifeMinutes -= awayMin;
-
-          // 오프라인으로 지나간 방은 로그 없이 정산
-          revealRoomsByProgress({silent:true});
-          addLog(`> 오프라인 원정 ${formatMinutes(awayMin)} 반영`, "log-muted");
-        }else{
-          /*
-           * 기본 주파시간을 넘겨 재접속한 경우:
-           * - 원정 소모는 실제 재접속까지의 시간
-           * - 단, 전체 원정 생명시간 소모는 온라인 기준 × 2에서 고정
-           * - 그 이후 남은 시간은 마을 자동 휴식으로 처리
-           */
-          const capRemaining = Math.max(0, exp.maxLifeCostMinutes - exp.lifeCostMinutes);
-          const expeditionOfflineCost = Math.min(awayMin, capRemaining);
-
-          exp.progressMinutes = exp.baseDurationMinutes;
-          exp.lifeCostMinutes += expeditionOfflineCost;
-          state.lifeMinutes -= expeditionOfflineCost;
-
-          const restAway = Math.max(0, awayMin - expeditionOfflineCost);
-          const restLifeCost = restAway * CONFIG.REST_LIFE_RATE;
-          state.lifeMinutes -= restLifeCost;
-
-          if(state.lifeMinutes < 0) state.lifeMinutes = 0;
-
-          completeExpedition("offline", restAway);
-        }
-      }else{
-        // 마을/휴식 상태에서는 30% 완화된 속도로 생명시간 감소
-        const lifeCost = awayMin * CONFIG.REST_LIFE_RATE;
-        state.lifeMinutes -= lifeCost;
-        if(state.lifeMinutes < 0) state.lifeMinutes = 0;
-
-        if(awayMin >= 1){
-          addLog(`> 휴식 ${formatMinutes(awayMin)} 반영\n  생명시간 -${formatMinutes(lifeCost)}`, "log-muted");
-        }
-      }
-
-      state.lastSeenAt = now;
-      runtime.lastFrameAt = now;
-      saveState();
-      renderAll();
-    }
-
-    function renderAll(){
-      renderLocation();
-      renderStage();
-      renderStatus();
-      renderLog();
-      renderControls();
-    }
-
-    function renderLocation(){
-      if(state.mode === "expedition" && state.expedition){
-        locationEl.textContent = "폐허 던전 · 원정 중";
-      }else{
-        locationEl.textContent = "마을 광장 · 휴식 중";
-      }
-    }
-
-    function renderStage(){
-      if(state.mode === "expedition" && state.expedition){
-        stageContent.className = "map-wrap";
-        stageContent.innerHTML = `<div id="map"></div>`;
-        renderMap();
-      }else{
-        stageContent.className = "village-art";
-        stageContent.textContent =
+function renderStage(){
+  if(state.mode==="expedition" && state.expedition){
+    stageContent.className="";
+    stageContent.innerHTML=`<div id="map" class="maze-board"></div>`;
+    renderMap();
+  }else{
+    stageContent.className="village-art";
+    stageContent.textContent=
 `                 .       *
         *               .
              /\\
@@ -968,235 +866,217 @@
      \\_______________/
 
         PARTY RESTING`;
-      }
+  }
+}
+
+function renderMap(){
+  const map=$("#map");
+  const exp=state.expedition;
+  if(!map||!exp)return;
+
+  map.innerHTML="";
+  const floor=exp.floors[exp.currentFloorIndex];
+  if(!floor)return;
+
+  const badge=document.createElement("div");
+  badge.className="floor-badge";
+  badge.textContent=`${floor.floor}F / ${CONFIG.FLOORS}F`;
+  map.appendChild(badge);
+
+  const boardW=340, boardH=220;
+  const marginX=42, marginY=42;
+  const usableW=boardW-marginX*2;
+  const usableH=boardH-marginY*2;
+
+  const coords=floor.nodes.map(n=>({
+    x:marginX+(n.x/(floor.width-1))*usableW,
+    y:marginY+(n.y/(floor.height-1))*usableH
+  }));
+
+  // 모든 미로 벽/길을 미리 보여주지 않고, 지나온 길만 밝힌다.
+  for(const node of floor.nodes){
+    for(const nb of node.neighbors){
+      if(nb<node.id)continue;
+      const ek=edgeKey(node.id,nb);
+      const a=coords[node.id], b=coords[nb];
+      const dx=b.x-a.x, dy=b.y-a.y;
+      const len=Math.sqrt(dx*dx+dy*dy);
+      const angle=Math.atan2(dy,dx)*180/Math.PI;
+
+      const line=document.createElement("div");
+      line.className="maze-edge";
+      if(floor.revealedEdges.includes(ek))line.classList.add("revealed");
+      line.style.left=`${a.x}px`;
+      line.style.top=`${a.y}px`;
+      line.style.width=`${len}px`;
+      line.style.transform=`rotate(${angle}deg)`;
+      map.appendChild(line);
+    }
+  }
+
+  for(const node of floor.nodes){
+    const el=document.createElement("div");
+    el.className="maze-node";
+    el.style.left=`${coords[node.id].x}px`;
+    el.style.top=`${coords[node.id].y}px`;
+
+    if(floor.revealedNodes.includes(node.id)){
+      el.classList.add("revealed");
+      el.textContent="·";
+    }else{
+      el.textContent="?";
     }
 
-    function renderMap(){
-      const mapEl = $("#map");
-      const exp = state.expedition;
-      if(!mapEl || !exp) return;
-
-      mapEl.innerHTML = "";
-
-      const X0 = 48;
-      const XSPAN = 278;
-      const YS = [18, 44, 70];
-
-      function addEdge(parent, x1, y1, x2, y2, revealed){
-        const dx = x2-x1, dy = y2-y1;
-        const len = Math.sqrt(dx*dx + dy*dy);
-        const angle = Math.atan2(dy,dx) * 180/Math.PI;
-        const edge = document.createElement("div");
-        edge.className = "map-edge" + (revealed ? " revealed" : "");
-        edge.style.left = `${x1}px`;
-        edge.style.top = `${y1}px`;
-        edge.style.width = `${len}px`;
-        edge.style.transform = `rotate(${angle}deg)`;
-        parent.appendChild(edge);
-      }
-
-      for(const floor of exp.floors){
-        const fm = document.createElement("div");
-        fm.className = "floor-map";
-
-        const label = document.createElement("div");
-        label.className = "floor-label";
-        label.textContent = `${floor.floor}F`;
-        fm.appendChild(label);
-
-        const n = floor.rooms.length;
-        const coords = floor.rooms.map((room, i) => ({
-          x: X0 + (n === 1 ? 0 : (i/(n-1))*XSPAN),
-          y: YS[room.lane]
-        }));
-
-        // 진행 경로 연결선
-        for(let i=1;i<n;i++){
-          const prev = floor.rooms[i-1];
-          const cur = floor.rooms[i];
-          const revealed = cur.globalIndex <= exp.currentGlobalRoom;
-          addEdge(fm, coords[i-1].x, coords[i-1].y, coords[i].x, coords[i].y, revealed);
-        }
-
-        // 숨겨진 갈림길. 발견 전에는 지도에 표시하지 않는다.
-        for(const branch of floor.branches){
-          if(!(branch.triggered || branch.missed || branch.taken)) continue;
-          const base = coords[branch.roomLocalIndex];
-          const hx = Math.min(X0+XSPAN, base.x + 18);
-          const hy = YS[branch.hiddenLane];
-
-          addEdge(fm, base.x, base.y, hx, hy, branch.taken);
-
-          const hidden = document.createElement("div");
-          hidden.className = "map-node hidden";
-          hidden.style.left = `${hx}px`;
-          hidden.style.top = `${hy}px`;
-          hidden.textContent = branch.taken ? "◆" : "?";
-          if(branch.taken){
-            hidden.classList.add("revealed","taken");
-          }
-          fm.appendChild(hidden);
-        }
-
-        // 방 노드
-        floor.rooms.forEach((room,i) => {
-          const node = document.createElement("div");
-          node.className = "map-node";
-          node.style.left = `${coords[i].x}px`;
-          node.style.top = `${coords[i].y}px`;
-
-          if(room.revealed || room.globalIndex <= exp.currentGlobalRoom){
-            node.classList.add("revealed");
-            node.textContent = "·";
-          }else{
-            node.textContent = "?";
-          }
-
-          if(room.globalIndex === exp.currentGlobalRoom && state.mode === "expedition"){
-            node.classList.add("current");
-            node.textContent = "●";
-          }
-
-          if(floor.floor === CONFIG.FLOORS && room.localIndex === n-1){
-            node.classList.add("boss");
-          }
-
-          fm.appendChild(node);
-        });
-
-        mapEl.appendChild(fm);
-      }
+    if(node.id===floor.currentNode){
+      el.classList.add("current");
+      el.textContent="●";
     }
+    if(node.id===floor.exitId){
+      el.classList.add("exit");
+    }
+    map.appendChild(el);
+  }
 
-    function renderStatus(){
-      const expNeeded = expToNext(state.level);
-      let extra = "";
+  // 발견된 숨겨진 길만 작은 빨간 ?로 표시
+  for(const branch of floor.branches){
+    if(!(branch.triggered||branch.taken||branch.missed))continue;
+    const base=coords[branch.nodeId];
+    const mark=document.createElement("div");
+    mark.className="maze-node hidden-mark";
+    mark.style.left=`${clamp(base.x+24,20,320)}px`;
+    mark.style.top=`${clamp(base.y-24,24,196)}px`;
+    mark.textContent=branch.taken?"◆":"?";
+    map.appendChild(mark);
+  }
+}
 
-      if(state.mode === "expedition" && state.expedition){
-        const exp = state.expedition;
-        extra = `
-          <div class="status-item"><span>원정</span><span>${Math.floor(clamp(exp.progressMinutes/exp.baseDurationMinutes,0,1)*100)}%</span></div>
-          <div class="status-item"><span>획득 EXP</span><span>+${exp.expEarned}</span></div>
-        `;
-      }else{
-        extra = `
-          <div class="status-item"><span>상태</span><span>자동 휴식</span></div>
-          <div class="status-item"><span>휴식 감소율</span><span>70%</span></div>
-        `;
-      }
+function renderStatus(){
+  const expNeeded=expToNext(state.level);
+  let extra="";
 
-      statusEl.innerHTML = `
-        <div class="status-item"><span>Lv.</span><span>${state.level}</span></div>
-        <div class="status-item"><span>EXP</span><span>${state.exp}/${expNeeded}</span></div>
-        <div class="status-item"><span>생명시간</span><span>${formatShortMinutes(state.lifeMinutes)}</span></div>
-        <div class="status-item"><span>행동력</span><span>${state.action}/${state.maxAction}</span></div>
-        <div class="status-item"><span>재화</span><span>${state.gold}</span></div>
-        <div class="status-item"><span>재료</span><span>${state.materials}</span></div>
-        ${extra}
+  if(state.mode==="expedition" && state.expedition){
+    const exp=state.expedition;
+    extra=`
+      <div class="status-item"><span>원정</span><span>${Math.floor(clamp(exp.progressMinutes/exp.baseDurationMinutes,0,1)*100)}%</span></div>
+      <div class="status-item"><span>현재층</span><span>${exp.currentFloorIndex+1}/${CONFIG.FLOORS}</span></div>
+    `;
+  }else{
+    extra=`
+      <div class="status-item"><span>상태</span><span>자동 휴식</span></div>
+      <div class="status-item"><span>휴식 감소율</span><span>70%</span></div>
+    `;
+  }
+
+  statusEl.innerHTML=`
+    <div class="status-item"><span>Lv.</span><span>${state.level}</span></div>
+    <div class="status-item"><span>EXP</span><span>${state.exp}/${expNeeded}</span></div>
+    <div class="status-item"><span>생명시간</span><span>${formatShortMinutes(state.lifeMinutes)}</span></div>
+    <div class="status-item"><span>행동력</span><span>${state.action}/${state.maxAction}</span></div>
+    <div class="status-item"><span>재화</span><span>${state.gold}</span></div>
+    <div class="status-item"><span>재료</span><span>${state.materials}</span></div>
+    ${extra}
+  `;
+}
+
+function renderLog(){
+  logEl.innerHTML="";
+  for(const item of state.logs){
+    const line=document.createElement("div");
+    line.className=`log-line ${item.cls||""}`;
+    line.textContent=item.text;
+    logEl.appendChild(line);
+  }
+  logEl.scrollTop=logEl.scrollHeight;
+}
+
+function renderControls(){
+  if(state.mode==="expedition" && state.expedition){
+    const exp=state.expedition;
+
+    if(exp.pendingBranch){
+      const remain=Math.max(0,Math.ceil((exp.pendingBranch.expiresAt-Date.now())/1000));
+      controlsEl.innerHTML=`
+        <button id="branchActionBtn" class="alert full">숨겨진 길 탐색 · ${remain}</button>
       `;
+      $("#branchActionBtn").onclick=takeBranch;
+      return;
     }
 
-    function renderLog(){
-      logEl.innerHTML = "";
-      for(const item of state.logs){
-        const line = document.createElement("div");
-        line.className = `log-line ${item.cls || ""}`;
-        line.textContent = item.text;
-        logEl.appendChild(line);
-      }
-      logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    function renderControls(){
-      if(state.mode === "expedition" && state.expedition){
-        controlsEl.innerHTML = `
-          <button disabled class="wide">원정 진행 중</button>
-          <button id="statusBtn" class="wide">원정 상태</button>
-        `;
-
-        $("#statusBtn").onclick = () => {
-          const exp = state.expedition;
-          showToast(`진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}% · 생명소모 ${formatMinutes(exp.lifeCostMinutes)}`);
-        };
-      }else{
-        controlsEl.innerHTML = `
-          <button id="expeditionBtn" class="wide">원정 시작</button>
-          <button id="partyBtn">파티</button>
-          <button id="infoBtn">정보</button>
-        `;
-
-        $("#expeditionBtn").onclick = startExpedition;
-        $("#partyBtn").onclick = () => showToast(`파티 Lv.${state.level} · 현재 전투 계산은 미구현`);
-        $("#infoBtn").onclick = showInfo;
-      }
-    }
-
-    function showInfo(){
-      const demo = CONFIG.DEMO_MODE ? "ON" : "OFF";
+    controlsEl.innerHTML=`
+      <button disabled class="wide">원정 진행 중</button>
+      <button id="statusBtn" class="wide">원정 상태</button>
+    `;
+    $("#statusBtn").onclick=()=>{
+      showToast(`진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}% · 생명소모 ${formatMinutes(exp.lifeCostMinutes)}`);
+    };
+  }else{
+    controlsEl.innerHTML=`
+      <button id="expeditionBtn" class="wide">원정 시작</button>
+      <button id="partyBtn">파티</button>
+      <button id="infoBtn">정보</button>
+    `;
+    $("#expeditionBtn").onclick=startExpedition;
+    $("#partyBtn").onclick=()=>showToast(`파티 Lv.${state.level} · 전투 계산은 추후 도입`);
+    $("#infoBtn").onclick=()=>{
       alert(
-`프로토타입 규칙
+`프로토타입 v0.3
 
-• 온라인 기준 던전: ${CONFIG.BASE_DUNGEON_MINUTES}분
-• 오프라인 원정 최대 생명소모: ${CONFIG.BASE_DUNGEON_MINUTES*2}분
-• 5층 / 층당 10~15개 방\n• 자동 진행 가지치기형 미니맵
-• 숨겨진 갈림길: 층당 1개, 가끔 2개
-• 갈림길 선택시간: 5초
+• 온라인 기준 던전 약 60분
+• 총 5층
+• 층당 10~15개 방
+• 현재 층 미니맵만 표시
+• 미로형 자동 탐험
+• 막다른 길에서는 왔던 길로 자동 복귀
+• 숨겨진 통로: 층당 1개, 가끔 2개
+• 발견 시 로그 + 하단 빨간 버튼 5초
 • 원정 완료 후 자동 휴식
-• 휴식 중 생명시간 감소: 정상의 70%
-• DEMO_MODE: ${demo}
-
-데모 모드에서는
-1 현실 초 = 1 게임 분으로 압축됩니다.`
+• 휴식 중 생명시간 감소속도 70%
+• 수동 저장 없음 / 자동 저장`
       );
-    }
+    };
+  }
+}
 
-    function saveState(){
-      state.lastSeenAt = Date.now();
-      localStorage.setItem(CONFIG.SAVE_KEY, JSON.stringify(state));
-    }
+/* ---------- 저장 ---------- */
 
-    function loadState(){
-      try{
-        const raw = localStorage.getItem(CONFIG.SAVE_KEY);
-        if(!raw) return defaultState();
-        const parsed = JSON.parse(raw);
-        return parsed && parsed.version === 1 ? parsed : defaultState();
-      }catch(e){
-        return defaultState();
-      }
-    }
+function saveState(){
+  state.lastSeenAt=Date.now();
+  localStorage.setItem(CONFIG.SAVE_KEY,JSON.stringify(state));
+}
+function loadState(){
+  try{
+    const raw=localStorage.getItem(CONFIG.SAVE_KEY);
+    if(!raw)return defaultState();
+    const parsed=JSON.parse(raw);
+    return parsed?.version===3?parsed:defaultState();
+  }catch(e){
+    return defaultState();
+  }
+}
+function resetGame(){
+  localStorage.removeItem(CONFIG.SAVE_KEY);
+  state=defaultState();
+  runtime.lastFrameAt=Date.now();
+  renderAll();
+  saveState();
+}
+window.resetGame=resetGame;
 
-    function resetGame(){
-      localStorage.removeItem(CONFIG.SAVE_KEY);
-      state = defaultState();
-      runtime.lastFrameAt = Date.now();
-      renderAll();
-      saveState();
-    }
-
-    // 개발 편의를 위한 콘솔 명령:
-    // resetGame()
-    window.resetGame = resetGame;
-
-    document.addEventListener("visibilitychange", () => {
-      if(document.hidden){
-        saveState();
-      }else{
-        reconcileOffline();
-      }
-    });
-
-    window.addEventListener("pagehide", saveState);
-    window.addEventListener("beforeunload", saveState);
-
-    // 최초 로드 시 오프라인 시간 정산
+document.addEventListener("visibilitychange",()=>{
+  if(document.hidden){
+    saveState();
+  }else{
     reconcileOffline();
-    renderAll();
+    if(state.expedition?.pendingBranch)startBranchTimer();
+  }
+});
+window.addEventListener("pagehide",saveState);
+window.addEventListener("beforeunload",saveState);
 
-    runtime.tickHandle = setInterval(onlineTick, 250);
-
-    // 2초마다 자동저장
-    setInterval(saveState, 2000);
-  </script>
+reconcileOffline();
+renderAll();
+setInterval(onlineTick,250);
+setInterval(saveState,2000);
+</script>
 </body>
 </html>
