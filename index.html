@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#000000" />
-  <title>생존 원정 MUD 프로토타입</title>
+  <title>생존 원정 MUD 프로토타입 v0.2</title>
   <style>
     :root{
       --bg:#000;
@@ -91,68 +91,74 @@
       min-width:340px;
     }
 
-    .floor-row{
-      display:grid;
-      grid-template-columns:34px 1fr;
-      align-items:center;
-      gap:6px;
+    .floor-map{
+      position:relative;
+      width:100%;
+      min-width:340px;
+      height:88px;
+      border-bottom:1px dotted #333;
     }
+
+    .floor-map:last-child{border-bottom:0}
 
     .floor-label{
-      font-size:12px;
-      color:#bbb;
+      position:absolute;
+      left:0;
+      top:4px;
+      width:30px;
+      font-size:11px;
+      color:#999;
       text-align:right;
-      padding-right:2px;
     }
 
-    .rooms{
-      display:flex;
-      align-items:center;
-      flex-wrap:nowrap;
-      min-height:24px;
-    }
-
-    .room{
-      width:18px;
-      height:18px;
-      border:2px solid #777;
-      margin-right:3px;
+    .map-node{
+      position:absolute;
+      width:16px;
+      height:16px;
+      border:2px solid #555;
       display:grid;
       place-items:center;
-      font-size:10px;
+      font-size:9px;
       color:#555;
-      flex:0 0 auto;
+      background:#050505;
+      z-index:3;
+      transform:translate(-50%,-50%);
     }
 
-    .room.revealed{
+    .map-node.revealed{
       border-color:#fff;
       color:#fff;
     }
 
-    .room.current{
+    .map-node.current{
       background:#fff;
       color:#000;
       border-color:#fff;
     }
 
-    .room.boss{
+    .map-node.boss{
       border-style:double;
       border-width:3px;
     }
 
-    .branch-marker{
-      margin-left:-19px;
-      margin-right:3px;
-      transform:translateY(17px);
-      font-size:12px;
-      color:#777;
-      width:18px;
-      text-align:center;
-      flex:0 0 auto;
+    .map-node.hidden{
+      border-style:dashed;
     }
 
-    .branch-marker.seen{color:#fff}
-    .branch-marker.taken{color:#fff;font-weight:bold}
+    .map-node.hidden.taken{
+      border-style:solid;
+      font-weight:900;
+    }
+
+    .map-edge{
+      position:absolute;
+      height:2px;
+      background:#444;
+      transform-origin:0 50%;
+      z-index:1;
+    }
+
+    .map-edge.revealed{background:#fff}
 
     #status{
       padding:10px 12px;
@@ -363,7 +369,7 @@
       // 초기 행동력(현재 프로토타입에서는 표시만)
       MAX_ACTION: 6,
 
-      SAVE_KEY: "mud_idle_proto_v1"
+      SAVE_KEY: "mud_idle_proto_v2"
     };
 
     const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -470,33 +476,56 @@
 
       for(let f=0; f<CONFIG.FLOORS; f++){
         const roomCount = randInt(CONFIG.MIN_ROOMS_PER_FLOOR, CONFIG.MAX_ROOMS_PER_FLOOR);
-        const branches = [];
-
         const branchCount = Math.random() < CONFIG.SECOND_BRANCH_CHANCE ? 2 : 1;
+
+        // 실제 진행 순서는 자동으로 한 줄이지만,
+        // 미니맵에서는 파티가 여러 갈림길을 거쳐 전진하는 형태로 보이도록
+        // 각 방에 y 좌표를 부여한다. 플레이어가 일반 갈림길을 선택할 필요는 없다.
+        const rooms = [];
+        let lane = 1; // 0=상단, 1=중앙, 2=하단
+        const forcedTurns = new Set();
+
+        while(forcedTurns.size < Math.min(3, Math.floor(roomCount/3))){
+          forcedTurns.add(randInt(2, roomCount-3));
+        }
+
+        for(let r=0; r<roomCount; r++){
+          if(forcedTurns.has(r)){
+            const choices = [0,1,2].filter(v => v !== lane);
+            lane = choices[randInt(0, choices.length-1)];
+          }else if(r > 1 && r < roomCount-2 && Math.random() < 0.22){
+            lane = clamp(lane + (Math.random() < 0.5 ? -1 : 1), 0, 2);
+          }
+
+          rooms.push({
+            globalIndex,
+            localIndex:r,
+            lane,
+            revealed:false,
+            cleared:false
+          });
+          globalIndex++;
+        }
+
+        // 숨겨진 갈림길은 일반 진행 경로와 별개.
+        const branches = [];
         const candidates = [];
-        for(let i=2; i<roomCount-1; i++) candidates.push(i);
+        for(let i=2; i<roomCount-2; i++) candidates.push(i);
 
         for(let b=0; b<branchCount; b++){
           if(candidates.length === 0) break;
           const pick = randInt(0, candidates.length - 1);
           const roomLocalIndex = candidates.splice(pick,1)[0];
+          const baseLane = rooms[roomLocalIndex].lane;
+          const hiddenLane = baseLane === 0 ? 1 : (baseLane === 2 ? 1 : (Math.random()<0.5 ? 0 : 2));
+
           branches.push({
             roomLocalIndex,
+            hiddenLane,
             triggered:false,
             taken:false,
             missed:false
           });
-        }
-
-        const rooms = [];
-        for(let r=0; r<roomCount; r++){
-          rooms.push({
-            globalIndex,
-            localIndex:r,
-            revealed:false,
-            cleared:false
-          });
-          globalIndex++;
         }
 
         floors.push({
@@ -949,20 +978,72 @@
 
       mapEl.innerHTML = "";
 
+      const X0 = 48;
+      const XSPAN = 278;
+      const YS = [18, 44, 70];
+
+      function addEdge(parent, x1, y1, x2, y2, revealed){
+        const dx = x2-x1, dy = y2-y1;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        const angle = Math.atan2(dy,dx) * 180/Math.PI;
+        const edge = document.createElement("div");
+        edge.className = "map-edge" + (revealed ? " revealed" : "");
+        edge.style.left = `${x1}px`;
+        edge.style.top = `${y1}px`;
+        edge.style.width = `${len}px`;
+        edge.style.transform = `rotate(${angle}deg)`;
+        parent.appendChild(edge);
+      }
+
       for(const floor of exp.floors){
-        const row = document.createElement("div");
-        row.className = "floor-row";
+        const fm = document.createElement("div");
+        fm.className = "floor-map";
 
         const label = document.createElement("div");
         label.className = "floor-label";
         label.textContent = `${floor.floor}F`;
+        fm.appendChild(label);
 
-        const rooms = document.createElement("div");
-        rooms.className = "rooms";
+        const n = floor.rooms.length;
+        const coords = floor.rooms.map((room, i) => ({
+          x: X0 + (n === 1 ? 0 : (i/(n-1))*XSPAN),
+          y: YS[room.lane]
+        }));
 
-        for(const room of floor.rooms){
+        // 진행 경로 연결선
+        for(let i=1;i<n;i++){
+          const prev = floor.rooms[i-1];
+          const cur = floor.rooms[i];
+          const revealed = cur.globalIndex <= exp.currentGlobalRoom;
+          addEdge(fm, coords[i-1].x, coords[i-1].y, coords[i].x, coords[i].y, revealed);
+        }
+
+        // 숨겨진 갈림길. 발견 전에는 지도에 표시하지 않는다.
+        for(const branch of floor.branches){
+          if(!(branch.triggered || branch.missed || branch.taken)) continue;
+          const base = coords[branch.roomLocalIndex];
+          const hx = Math.min(X0+XSPAN, base.x + 18);
+          const hy = YS[branch.hiddenLane];
+
+          addEdge(fm, base.x, base.y, hx, hy, branch.taken);
+
+          const hidden = document.createElement("div");
+          hidden.className = "map-node hidden";
+          hidden.style.left = `${hx}px`;
+          hidden.style.top = `${hy}px`;
+          hidden.textContent = branch.taken ? "◆" : "?";
+          if(branch.taken){
+            hidden.classList.add("revealed","taken");
+          }
+          fm.appendChild(hidden);
+        }
+
+        // 방 노드
+        floor.rooms.forEach((room,i) => {
           const node = document.createElement("div");
-          node.className = "room";
+          node.className = "map-node";
+          node.style.left = `${coords[i].x}px`;
+          node.style.top = `${coords[i].y}px`;
 
           if(room.revealed || room.globalIndex <= exp.currentGlobalRoom){
             node.classList.add("revealed");
@@ -976,30 +1057,14 @@
             node.textContent = "●";
           }
 
-          if(floor.floor === CONFIG.FLOORS &&
-             room.localIndex === floor.rooms.length-1){
+          if(floor.floor === CONFIG.FLOORS && room.localIndex === n-1){
             node.classList.add("boss");
           }
 
-          rooms.appendChild(node);
+          fm.appendChild(node);
+        });
 
-          const branch = floor.branches.find(b => b.roomLocalIndex === room.localIndex);
-          if(branch){
-            const mark = document.createElement("div");
-            mark.className = "branch-marker";
-            if(branch.triggered || branch.missed) mark.classList.add("seen");
-            if(branch.taken) mark.classList.add("taken");
-
-            if(branch.taken) mark.textContent = "◆";
-            else if(branch.triggered || branch.missed) mark.textContent = "└?";
-            else mark.textContent = "";
-            rooms.appendChild(mark);
-          }
-        }
-
-        row.appendChild(label);
-        row.appendChild(rooms);
-        mapEl.appendChild(row);
+        mapEl.appendChild(fm);
       }
     }
 
@@ -1045,30 +1110,13 @@
     function renderControls(){
       if(state.mode === "expedition" && state.expedition){
         controlsEl.innerHTML = `
-          <button disabled>원정 중</button>
-          <button id="statusBtn">상태</button>
-          <button id="saveBtn">저장</button>
-          <button id="debugFinishBtn">즉시완료</button>
+          <button disabled class="wide">원정 진행 중</button>
+          <button id="statusBtn" class="wide">원정 상태</button>
         `;
 
         $("#statusBtn").onclick = () => {
           const exp = state.expedition;
           showToast(`진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}% · 생명소모 ${formatMinutes(exp.lifeCostMinutes)}`);
-        };
-        $("#saveBtn").onclick = () => {
-          saveState();
-          showToast("저장되었습니다.");
-        };
-        $("#debugFinishBtn").onclick = () => {
-          if(!CONFIG.DEMO_MODE){
-            showToast("실서비스 모드에서는 사용할 수 없습니다.");
-            return;
-          }
-          const exp = state.expedition;
-          exp.progressMinutes = exp.baseDurationMinutes;
-          exp.lifeCostMinutes += 1;
-          state.lifeMinutes -= 1;
-          completeExpedition("debug");
         };
       }else{
         controlsEl.innerHTML = `
@@ -1090,7 +1138,7 @@
 
 • 온라인 기준 던전: ${CONFIG.BASE_DUNGEON_MINUTES}분
 • 오프라인 원정 최대 생명소모: ${CONFIG.BASE_DUNGEON_MINUTES*2}분
-• 5층 / 층당 10~15개 방
+• 5층 / 층당 10~15개 방\n• 자동 진행 가지치기형 미니맵
 • 숨겨진 갈림길: 층당 1개, 가끔 2개
 • 갈림길 선택시간: 5초
 • 원정 완료 후 자동 휴식
