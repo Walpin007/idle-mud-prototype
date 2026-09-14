@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.3</title>
+<title>생존 원정 MUD 프로토타입 v0.3.1</title>
 <style>
 :root{
   --bg:#000;
@@ -884,13 +884,25 @@ function renderMap(){
   map.appendChild(badge);
 
   const boardW=340, boardH=220;
-  const marginX=42, marginY=42;
-  const usableW=boardW-marginX*2;
-  const usableH=boardH-marginY*2;
+
+  // 실제 생성된 방들의 범위를 기준으로 지도 자체를 화면 정중앙에 배치한다.
+  // 빈 격자 영역 때문에 지도가 위/아래 또는 좌/우로 치우쳐 보이지 않게 함.
+  const xs=floor.nodes.map(n=>n.x);
+  const ys=floor.nodes.map(n=>n.y);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const minY=Math.min(...ys), maxY=Math.max(...ys);
+
+  const rangeX=Math.max(1,maxX-minX);
+  const rangeY=Math.max(1,maxY-minY);
+
+  const targetW=250;
+  const targetH=135;
+  const startX=(boardW-targetW)/2;
+  const startY=(boardH-targetH)/2 + 8;
 
   const coords=floor.nodes.map(n=>({
-    x:marginX+(n.x/(floor.width-1))*usableW,
-    y:marginY+(n.y/(floor.height-1))*usableH
+    x:startX+((n.x-minX)/rangeX)*targetW,
+    y:startY+((n.y-minY)/rangeY)*targetH
   }));
 
   // 모든 미로 벽/길을 미리 보여주지 않고, 지나온 길만 밝힌다.
