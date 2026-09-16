@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.4.3.3</title>
+<title>생존 원정 MUD 프로토타입 v0.4.4.3</title>
 <style>
 :root{
   --bg:#000;
@@ -269,7 +269,7 @@ const CONFIG = {
   // 데모 모드에서는 현실 20초 = 육성 1일
   TRAINING_DEMO_DAY_MS:20000,
 
-  SAVE_KEY:"mud_idle_proto_v10"
+  SAVE_KEY:"mud_idle_proto_v11"
 };
 
 const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -800,9 +800,8 @@ function syncTrainingDays(){
   }
   n.lastDayIndex=dayIndex;
 
-  if(dayIndex>=CONFIG.TRAINING_DAYS){
-    finishTraining();
-  }
+  // 3일차에 진입했다고 자동 전직하지 않는다.
+  // 마지막 날의 육성 행동을 모두 사용하면 즉시 전직한다.
 }
 
 function chooseClass(n){
@@ -865,6 +864,11 @@ function trainStat(stat){
 
   const labels={STR:"근력",DEX:"민첩",INT:"지력",FAI:"신앙"};
   trainingAddLog(`> ${labels[stat]} 훈련 완료\n  ${stat} +${gain}`);
+
+  if(n.day>=CONFIG.TRAINING_DAYS && n.actionsLeft<=0){
+    finishTraining();
+  }
+
   renderAll();
   saveState();
 }
@@ -898,6 +902,15 @@ function resetFinishedNovice(){
 
 function startExpedition(){
   if(state.mode==="expedition")return;
+
+  // 최소 1명의 전직 완료 캐릭터가 있어야 원정 가능.
+  if(!state.training?.graduates?.length){
+    showToast("원정 가능한 캐릭터가 없습니다. 노비스를 육성해 전직시켜 주세요.");
+    state.screen="village";
+    renderAll();
+    return;
+  }
+
   state.screen="dungeon";
 
   state.mode="expedition";
@@ -1273,8 +1286,8 @@ function renderStatus(){
       `;
     }else{
       statusEl.innerHTML=`
-        <div class="status-item"><span>원정대</span><span>대기 중</span></div>
-        <div class="status-item"><span>육성 후보</span><span>${state.training.graduates.length}명</span></div>
+        <div class="status-item"><span>원정 가능</span><span>${state.training.graduates.length>0 ? "가능" : "캐릭터 없음"}</span></div>
+        <div class="status-item"><span>전직 완료</span><span>${state.training.graduates.length}명</span></div>
       `;
     }
     return;
@@ -1446,7 +1459,7 @@ function renderControls(){
   const alertBtn=globalHiddenBranchButton();
   controlsEl.innerHTML=`
     <button id="trainingBtn">육성</button>
-    <button id="expeditionBtn">${state.mode==="expedition" ? "원정 보기" : "원정 시작"}</button>
+    <button id="expeditionBtn" ${state.mode!=="expedition" && state.training.graduates.length===0 ? "disabled" : ""}>${state.mode==="expedition" ? "원정 보기" : "원정 시작"}</button>
     <button id="partyBtn">파티</button>
     <button id="infoBtn">정보</button>
     ${alertBtn}
@@ -1459,7 +1472,7 @@ function renderControls(){
       ? `원정대 파견 중 · 백그라운드 진행`
       : `원정대 마을 대기 중`;
     alert(
-`프로토타입 v0.4.3
+`프로토타입 v0.4.4
 
 ${expeditionText}
 
