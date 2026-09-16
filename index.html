@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="theme-color" content="#000000" />
-<title>생존 원정 MUD 프로토타입 v0.4.4.3</title>
+<title>생존 원정 MUD 프로토타입 v0.5.3</title>
 <style>
 :root{
   --bg:#000;
@@ -212,6 +212,30 @@ button.alert:active{background:var(--red);color:#000}
 
 .training-nav-row{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:8px;width:100%;}
 .training-nav-row button{width:100%;min-width:0;}
+
+.party-wrap{
+  width:min(100%,350px);
+  margin:auto;
+  display:flex;
+  flex-direction:column;
+  gap:9px;
+}
+.party-title{font-size:15px;font-weight:900;text-align:center;margin-bottom:2px}
+.party-slot,.candidate-row{
+  border:2px solid #777;
+  padding:8px 10px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:38px;
+}
+.party-slot.empty{color:#666;border-style:dashed}
+.party-char{min-width:0}
+.party-char strong{display:block;font-size:13px}
+.party-char small{display:block;color:#aaa;font-size:10px;margin-top:2px}
+.party-mini-btn{padding:5px 8px;min-height:30px;font-size:11px}
+.party-section-label{font-size:11px;color:#aaa;margin-top:5px}
 #toast{
   position:fixed; left:50%;
   bottom:calc(18px + var(--safe-bottom));
@@ -269,7 +293,7 @@ const CONFIG = {
   // 데모 모드에서는 현실 20초 = 육성 1일
   TRAINING_DEMO_DAY_MS:20000,
 
-  SAVE_KEY:"mud_idle_proto_v11"
+  SAVE_KEY:"mud_idle_proto_v12"
 };
 
 const TIME_SCALE = CONFIG.DEMO_MODE ? 60 : 1;
@@ -289,7 +313,7 @@ let runtime={
 
 function defaultState(){
   return {
-    version:4,
+    version:5,
     mode:"rest",
     lifeMinutes:CONFIG.START_LIFE_MINUTES,
     action:CONFIG.MAX_ACTION,
@@ -301,12 +325,13 @@ function defaultState(){
     expeditionCount:0,
     totalHiddenFound:0,
     lastSeenAt:Date.now(),
-    screen:"village", // village | training | dungeon
+    screen:"village", // village | training | party | dungeon
     logs:[
       {text:"> 파티가 마을에서 휴식 중입니다.",cls:"log-muted"},
       {text:"> 원정을 시작할 수 있습니다.",cls:""}
     ],
     expedition:null,
+    partyIds:[],
 
     training:{
       novice:null,
@@ -903,9 +928,9 @@ function resetFinishedNovice(){
 function startExpedition(){
   if(state.mode==="expedition")return;
 
-  // 최소 1명의 전직 완료 캐릭터가 있어야 원정 가능.
-  if(!state.training?.graduates?.length){
-    showToast("원정 가능한 캐릭터가 없습니다. 노비스를 육성해 전직시켜 주세요.");
+  normalizeParty();
+  if(partyMembers().length<1){
+    showToast("파티에 최소 1명의 캐릭터를 편성해 주세요.");
     state.screen="village";
     renderAll();
     return;
@@ -1099,6 +1124,36 @@ function renderAll(){
 function renderLocation(){
   if(state.screen==="training"){
     locationEl.textContent="육성소 · 노비스 육성";
+  }else if(state.screen==="party"){
+    locationEl.textContent="파티 관리 · 원정대 편성";
+  }else if(state.screen==="party"){
+    normalizeParty();
+    const members=partyMembers();
+    const candidates=state.training.graduates.filter(c=>!state.partyIds.includes(c.id));
+    stageContent.className="";
+    const slots=Array.from({length:4},(_,i)=>{
+      const c=members[i];
+      if(!c)return `<div class="party-slot empty"><span>${i+1}. EMPTY</span></div>`;
+      return `<div class="party-slot">
+        <div class="party-char"><strong>${i+1}. ${c.name} · ${c.className}</strong>
+        <small>Lv.${c.level} · 생존 ${formatShortMinutes(c.lifeMinutes)} · EXP ${c.exp}</small></div>
+        ${state.mode==="expedition" ? "" : `<button class="party-mini-btn" data-remove="${c.id}">제외</button>`}
+      </div>`;
+    }).join("");
+    const rows=candidates.length ? candidates.map(c=>`
+      <div class="candidate-row">
+        <div class="party-char"><strong>${c.name} · ${c.className}</strong>
+        <small>Lv.${c.level} · 생존 ${formatShortMinutes(c.lifeMinutes)} · EXP ${c.exp}</small></div>
+        ${state.mode==="expedition" ? "" : `<button class="party-mini-btn" data-add="${c.id}">편성</button>`}
+      </div>`).join("") : `<div class="training-sub">대기 중인 후보가 없습니다.</div>`;
+    stageContent.innerHTML=`<div class="party-wrap">
+      <div class="party-title">PARTY · ${members.length}/4</div>
+      ${slots}
+      <div class="party-section-label">후보</div>
+      ${rows}
+    </div>`;
+    stageContent.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>addToParty(b.dataset.add));
+    stageContent.querySelectorAll("[data-remove]").forEach(b=>b.onclick=()=>removeFromParty(b.dataset.remove));
   }else if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     const floor=state.expedition.floors[state.expedition.currentFloorIndex];
     locationEl.textContent=`폐허 던전 · ${floor.floor}F`;
@@ -1276,8 +1331,19 @@ function renderStatus(){
     return;
   }
 
-  // 마을에서는 캐릭터의 레벨/경험치/생명시간/행동력 등을 노출하지 않는다.
+  if(state.screen==="party"){
+    statusEl.innerHTML="";
+    return;
+  }
+
+  // 마을에서는 캐릭터별 정보 패널을 표시하지 않는다.
   if(state.screen==="village"){
+    statusEl.innerHTML="";
+    return;
+  }
+
+  /* legacy village status block is bypassed */
+  if(false){
     if(state.mode==="expedition" && state.expedition){
       const exp=state.expedition;
       statusEl.innerHTML=`
@@ -1329,6 +1395,45 @@ function renderLog(){
   logEl.scrollTop=logEl.scrollHeight;
 }
 
+
+
+function partyMembers(){
+  const ids=state.partyIds||[];
+  return ids.map(id=>state.training.graduates.find(c=>c.id===id)).filter(Boolean);
+}
+function normalizeParty(){
+  state.partyIds=(state.partyIds||[]).filter((id,i,a)=>
+    a.indexOf(id)===i && state.training.graduates.some(c=>c.id===id)
+  ).slice(0,4);
+}
+function enterParty(){
+  normalizeParty();
+  state.screen="party";
+  renderAll();
+  saveState();
+}
+function addToParty(id){
+  if(state.mode==="expedition"){
+    showToast("원정 중에는 파티를 변경할 수 없습니다.");
+    return;
+  }
+  normalizeParty();
+  if(state.partyIds.includes(id))return;
+  if(state.partyIds.length>=4){
+    showToast("파티는 최대 4명입니다.");
+    return;
+  }
+  state.partyIds.push(id);
+  renderAll(); saveState();
+}
+function removeFromParty(id){
+  if(state.mode==="expedition"){
+    showToast("원정 중에는 파티를 변경할 수 없습니다.");
+    return;
+  }
+  state.partyIds=(state.partyIds||[]).filter(x=>x!==id);
+  renderAll(); saveState();
+}
 
 function showVillage(){
   state.screen="village";
@@ -1425,6 +1530,20 @@ function renderControls(){
     return;
   }
 
+  if(state.screen==="party"){
+    const alertBtn=globalHiddenBranchButton();
+    controlsEl.innerHTML=`
+      <button id="partyVillageBtn">${state.mode==="expedition" ? "마을 보기" : "마을로"}</button>
+      ${state.mode==="expedition" ? `<button id="partyExpBtn">원정 보기</button>` : `<button id="partyTrainBtn">육성</button>`}
+      ${alertBtn}
+    `;
+    $("#partyVillageBtn").onclick=showVillage;
+    if($("#partyExpBtn")) $("#partyExpBtn").onclick=showDungeon;
+    if($("#partyTrainBtn")) $("#partyTrainBtn").onclick=enterTraining;
+    bindGlobalHiddenBranchButton();
+    return;
+  }
+
   // 던전 화면
   if(state.screen==="dungeon" && state.mode==="expedition" && state.expedition){
     const exp=state.expedition;
@@ -1450,7 +1569,7 @@ function renderControls(){
     `;
     $("#villageBtn").onclick=showVillage;
     $("#trainingBtn").onclick=enterTraining;
-    $("#partyBtn").onclick=()=>showToast(`파티 후보 ${state.training.graduates.length}명 · 1~4인 편성 예정`);
+    $("#partyBtn").onclick=enterParty;
     $("#infoBtn").onclick=()=>showToast(`원정 진행 ${Math.floor(exp.progressMinutes/exp.baseDurationMinutes*100)}%`);
     return;
   }
@@ -1459,20 +1578,20 @@ function renderControls(){
   const alertBtn=globalHiddenBranchButton();
   controlsEl.innerHTML=`
     <button id="trainingBtn">육성</button>
-    <button id="expeditionBtn" ${state.mode!=="expedition" && state.training.graduates.length===0 ? "disabled" : ""}>${state.mode==="expedition" ? "원정 보기" : "원정 시작"}</button>
+    <button id="expeditionBtn" ${state.mode!=="expedition" && partyMembers().length===0 ? "disabled" : ""}>${state.mode==="expedition" ? "원정 보기" : "원정 시작"}</button>
     <button id="partyBtn">파티</button>
     <button id="infoBtn">정보</button>
     ${alertBtn}
   `;
   $("#trainingBtn").onclick=enterTraining;
   $("#expeditionBtn").onclick=state.mode==="expedition" ? showDungeon : startExpedition;
-  $("#partyBtn").onclick=()=>showToast(`파티 후보 ${state.training.graduates.length}명 · 1~4인 편성 예정`);
+  $("#partyBtn").onclick=enterParty;
   $("#infoBtn").onclick=()=>{
     const expeditionText=state.mode==="expedition"
       ? `원정대 파견 중 · 백그라운드 진행`
       : `원정대 마을 대기 중`;
     alert(
-`프로토타입 v0.4.4
+`프로토타입 v0.5
 
 ${expeditionText}
 
@@ -1498,7 +1617,7 @@ function loadState(){
     const raw=localStorage.getItem(CONFIG.SAVE_KEY);
     if(!raw)return defaultState();
     const parsed=JSON.parse(raw);
-    return parsed?.version===4?parsed:defaultState();
+    return parsed?.version===5?parsed:defaultState();
   }catch(e){
     return defaultState();
   }
